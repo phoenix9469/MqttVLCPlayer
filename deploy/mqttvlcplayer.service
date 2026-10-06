@@ -1,18 +1,27 @@
+# 사용자 서비스(systemd --user)로 실행한다.
+# 데스크톱 세션의 화면(DISPLAY/WAYLAND_DISPLAY)과 오디오(PipeWire/PulseAudio)를 그대로 쓰기 위해서다.
+#
+# 설치:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/mqttvlcplayer.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mqttvlcplayer
+#
+# %h 는 홈 폴더(/home/<사용자>)로 바뀐다. 프로젝트 위치가 다르면 아래 두 경로를 고친다.
+
 [Unit]
 Description=MqttVLCPlayer (VLC + LG TV control over MQTT)
-After=network-online.target graphical.target
-Wants=network-online.target
+# 데스크톱에 로그인해서 그래픽 세션이 시작된 뒤에 실행
+After=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
 Type=simple
-User=user
-WorkingDirectory=/home/user/MqttVLCPlayer
+WorkingDirectory=%h/MqttVLCPlayer
 EnvironmentFile=/etc/mqttvlcplayer.env
-# cvlc가 화면에 출력할 수 있도록 디스플레이 지정 (환경에 맞게 수정)
-Environment=DISPLAY=:0
-ExecStart=/home/user/MqttVLCPlayer/.venv/bin/python video_player.py
+ExecStart=%h/MqttVLCPlayer/.venv/bin/python video_player.py
 Restart=on-failure
-RestartSec=5
+RestartSec=10
 
 [Install]
-WantedBy=graphical.target
+WantedBy=graphical-session.target

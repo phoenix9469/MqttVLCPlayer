@@ -80,6 +80,24 @@ set -a; . /etc/mqttvlcplayer.env; set +a
 .venv/bin/python video_player.py
 ```
 
+### 부팅 시 터미널 창에서 자동 실행 (데스크톱)
+
+데스크톱에 로그인하면 터미널 창이 열리고 그 안에서 앱이 실행됩니다. 앱이 종료되면 5초 뒤 다시 시작합니다.
+
+```bash
+deploy/install-autostart.sh      # sudo 없이, 앱을 실행할 사용자로 한 번만 실행
+```
+
+- 환경변수는 `/etc/mqttvlcplayer.env`에서 읽습니다(`ENV_FILE`로 위치 변경 가능). 실행 사용자가 읽을 수 있어야 합니다:
+  `sudo chown root:<user> /etc/mqttvlcplayer.env && sudo chmod 640 /etc/mqttvlcplayer.env`
+- 프로젝트가 NAS 폴더에 있어도, 폴더가 보일 때까지 기다렸다가 실행합니다.
+- 전원을 켜면 바로 실행되도록 **자동 로그인**을 켜세요(GNOME: 설정 → 사용자 → 자동 로그인).
+- 영상이 계속 보이도록 **화면 꺼짐과 잠금**을 끄세요:
+  `gsettings set org.gnome.desktop.session idle-delay 0 && gsettings set org.gnome.desktop.screensaver lock-enabled false`
+- 앱을 멈추려면 터미널에서 Ctrl+C(재시작 대기 5초 안에 한 번 더 누르면 반복 실행도 멈춤). 직접 다시 실행하려면 `deploy/start.sh`.
+- 자동 실행 해제: `rm ~/.config/autostart/mqttvlcplayer.desktop`
+- 아래 systemd 서비스와 **동시에 쓰지 마세요**(앱이 두 개 실행됨).
+
 ### systemd 서비스로 실행
 
 ```bash
