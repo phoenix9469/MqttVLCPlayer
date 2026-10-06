@@ -146,8 +146,9 @@ class PiperTTS:
         if speaker_id >= getattr(model.config, "num_speakers", 1):
             speaker_id = 0
         with wave.open(path, "wb") as wav_file:
-            # length_scale은 음소 길이 배율이라 클수록 느려짐
-            model.synthesize(text, wav_file, speaker_id=speaker_id, length_scale=1.0 / speed,
+            # length_scale은 음소 길이 배율이라 클수록 느려짐. 모델에 정해진 기본값에 속도 배율을 적용
+            base = getattr(model.config, "length_scale", None) or 1.0
+            model.synthesize(text, wav_file, speaker_id=speaker_id, length_scale=base / speed,
                              language_id=(model.config.language_id_map or {}).get(lang))
         return True
 

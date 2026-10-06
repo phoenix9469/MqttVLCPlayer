@@ -63,7 +63,7 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
 | `TTS_LANG` | `auto` | TTS 언어 `ja` 또는 `en`. `auto`면 가나·한자가 있을 때 `ja`, 아니면 `en` |
-| `TTS_SPEED` | `1.0` | 말하는 속도 배율(0.5~2.0). `1.2`는 20% 빠르게, `0.8`은 20% 느리게 |
+| `TTS_SPEED` | `1.0` | 말하는 속도 배율(0.5~2.0). 모델의 기본 속도 기준으로 `1.2`는 20% 빠르게, `0.8`은 20% 느리게 |
 | `PIPER_MODEL` | `ja_JP-tsukuyomi-chan-medium` | 기본 목소리. piper-plus 모델 이름 또는 `.onnx` 파일 경로 |
 | `PIPER_VOICES` | `ja_JP-css10-6lang-medium` | 기본 목소리 외에 고를 수 있는 목소리 목록(쉼표로 구분) |
 | `PIPER_SPEAKER` | `0` | 화자가 여러 명인 모델에서 쓸 기본 화자 번호 |
