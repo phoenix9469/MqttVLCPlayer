@@ -23,7 +23,9 @@ echo
 echo "MqttVLCPlayer가 멈췄습니다. 다시 실행: bash \$APP_DIR/deploy/start.sh"
 exec bash
 LAUNCH
-chmod +x "$LAUNCHER" "$APP_DIR/deploy/start.sh"
+chmod +x "$LAUNCHER"
+# 실행기는 start.sh를 bash로 실행하므로 실행 권한은 없어도 됨 (NAS 공유에서는 chmod가 막힐 수 있음)
+chmod +x "$APP_DIR/deploy/start.sh" 2>/dev/null || true
 
 # 설치된 터미널 프로그램에 맞는 실행 명령
 if command -v gnome-terminal >/dev/null; then
