@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,11 @@ STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
 CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 VLC가 화면에 맞춰 자동 결정
 
+# 영상 재생 버퍼(ms). NAS에서 읽을 때 끊기면 늘린다 (VLC 기본값은 1000ms)
+VLC_CACHING = int(os.environ.get("VLC_CACHING", "3000"))
+# 영상 재생에 추가할 VLC 옵션 (예: "--avcodec-hw=vaapi --vout=xcb_x11")
+VLC_EXTRA_ARGS = shlex.split(os.environ.get("VLC_EXTRA_ARGS", ""))
+
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
 CVLC_ARGS = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
@@ -54,6 +60,7 @@ if CLOCK_FORMAT:
                   "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
     if CLOCK_SIZE > 0:
         CVLC_ARGS.append(f"--marq-size={CLOCK_SIZE}")
+CVLC_ARGS += [f"--file-caching={VLC_CACHING}", f"--network-caching={VLC_CACHING}"] + VLC_EXTRA_ARGS
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"

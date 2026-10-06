@@ -59,6 +59,8 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `WEB_USERNAME` / `WEB_PASSWORD` | 없음 | 설정하면 웹 UI에 HTTP Basic 인증 적용 |
 | `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 VLC가 자동으로 결정 |
+| `VLC_CACHING` | `3000` | 영상 재생 버퍼(ms). NAS에서 읽다가 끊기면 늘림 (VLC 기본값 1000) |
+| `VLC_EXTRA_ARGS` | 없음 | 영상 재생에 추가할 VLC 옵션. 예: `--avcodec-hw=vaapi` |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
