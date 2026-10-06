@@ -36,8 +36,10 @@ python3 -m venv .venv
 일본어 음성 모델(약 40MB)을 미리 받아 둡니다. 받지 않으면 첫 음성 안내 때 자동으로 내려받습니다(인터넷 필요).
 
 ```bash
-.venv/bin/piper --download-model ja_JP-tsukuyomi-chan-medium --download-dir piper-models
+.venv/bin/piper-plus --download-model ja_JP-tsukuyomi-chan-medium --download-dir piper-models
 ```
+
+piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `piper-plus`로 바뀜). 앱은 두 버전 모두 지원합니다.
 
 이미 clone했다면 `git submodule update --init`으로 `libLGTV_serial`을 받습니다.
 

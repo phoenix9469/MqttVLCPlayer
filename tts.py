@@ -43,6 +43,15 @@ def ensure_nltk_data():
                 log.warning("Failed to download NLTK data %s (English TTS may not work)", name)
 
 
+def import_piper():
+    """piper-plus 모듈 반환 (2.x는 piper_plus, 1.x는 piper)"""
+    import importlib
+    try:
+        return importlib.import_module("piper_plus"), importlib.import_module("piper_plus.download")
+    except ImportError:
+        return importlib.import_module("piper"), importlib.import_module("piper.download")
+
+
 class PiperTTS:
     """piper-plus 음성 모델을 한 번만 로드해서 재사용"""
 
@@ -52,21 +61,20 @@ class PiperTTS:
         self._failed_at = None
 
     def _load(self):
-        from piper import PiperVoice
+        piper, download = import_piper()
 
         model, config_path = PIPER_MODEL, None
         if not os.path.exists(model):
             # 모델 이름이면 PIPER_DATA_DIR에서 찾고, 없으면 내려받음 (최초 1회 인터넷 필요)
-            from piper.download import ensure_voice_exists, find_voice, get_voices
             os.makedirs(PIPER_DATA_DIR, exist_ok=True)
-            voices = get_voices(PIPER_DATA_DIR)
+            voices = download.get_voices(PIPER_DATA_DIR)
             for info in list(voices.values()):
                 for alias in info.get("aliases", []):
                     voices[alias] = {"_is_alias": True, **info}
-            ensure_voice_exists(model, [PIPER_DATA_DIR], PIPER_DATA_DIR, voices)
-            model, config_path = find_voice(model, [PIPER_DATA_DIR])
+            download.ensure_voice_exists(model, [PIPER_DATA_DIR], PIPER_DATA_DIR, voices)
+            model, config_path = download.find_voice(model, [PIPER_DATA_DIR])
         log.info("Loading piper-plus model %s", model)
-        voice = PiperVoice.load(model, config_path=config_path)
+        voice = piper.PiperVoice.load(model, config_path=config_path)
         if "en" in self.languages(voice):
             ensure_nltk_data()
         return voice
