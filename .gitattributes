@@ -1,0 +1,6 @@
+# 리눅스에서 실행하는 파일이므로 Windows에서 받아도 줄 끝을 LF로 유지
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.wav binary
