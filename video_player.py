@@ -266,6 +266,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
         threading.Thread(target=update_tv_status, daemon=True).start()
 
 
+def tts_options(data):
+    """MQTT/웹 요청에서 TTS 옵션(lang, speed, voice, speaker)만 골라냄"""
+    return {key: data.get(key) for key in ("lang", "speed", "voice", "speaker")}
+
+
 def handle_message(topic, payload):
     if topic == TOPIC_TV_ON:
         set_tv_power(True)
@@ -283,7 +288,7 @@ def handle_message(topic, payload):
         sounds.play(name.strip(), opts.get("volume"))
     elif topic == TOPIC_SOUND_SAY:
         text, opts = parse_sound_payload(payload, "text")
-        sounds.say(text, opts.get("lang"), opts.get("volume"), opts.get("speed"))
+        sounds.say(text, opts.get("volume"), **tts_options(opts))
     elif topic == TOPIC_SOUND_STOP:
         sounds.stop()
 
@@ -332,7 +337,8 @@ def index():
     """웹 UI 메인 페이지"""
     return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing,
                            sound_files=get_sound_files(), sound_volume=SOUND_VOLUME,
-                           tts_speed=tts.parse_speed(None))
+                           tts_speed=tts.parse_speed(None), tts_voices=tts.PIPER_VOICES,
+                           tts_voice=tts.PIPER_MODEL, tts_speaker=tts.PIPER_SPEAKER)
 
 
 @app.route("/update", methods=["POST"])
@@ -380,7 +386,7 @@ def sound_play():
 @app.route("/sound/say", methods=["POST"])
 def sound_say():
     data = request.get_json(silent=True) or {}
-    return result(sounds.say(str(data.get("text", "")), data.get("lang"), data.get("volume"), data.get("speed")))
+    return result(sounds.say(str(data.get("text", "")), data.get("volume"), **tts_options(data)))
 
 
 @app.route("/tts/test", methods=["POST"])
@@ -392,11 +398,12 @@ def tts_test():
     if not text or lang not in tts.TTS_LANGS:
         return jsonify({"status": "error", "message": "문장과 언어(auto/ja/en)를 확인하세요."}), 400
     tmp = tempfile.mkdtemp(prefix="tts-")
-    synthesized = tts.synthesize(text, lang, tmp, data.get("speed"))
+    synthesized = tts.synthesize(text, lang, tmp, data.get("speed"), data.get("voice"), data.get("speaker"))
     if not synthesized:
         shutil.rmtree(tmp, ignore_errors=True)
         return jsonify({"status": "error", "message": "음성을 만들지 못했습니다. 서버 로그를 확인하세요."}), 500
     path, engine, used_lang = synthesized
+    voice = tts.resolve_voice(data.get("voice")) if engine == "piper" else "-"
     if data.get("target") == "browser":
         with open(path, "rb") as f:
             audio = f.read()
@@ -404,9 +411,10 @@ def tts_test():
         response = send_file(io.BytesIO(audio), mimetype="audio/wav")
         response.headers["X-TTS-Engine"] = engine
         response.headers["X-TTS-Lang"] = used_lang
+        response.headers["X-TTS-Voice"] = voice
         return response
     sounds.play_temp(path, data.get("volume"))
-    return jsonify({"status": "success", "engine": engine, "lang": used_lang})
+    return jsonify({"status": "success", "engine": engine, "lang": used_lang, "voice": voice})
 
 
 @app.route("/sound/stop", methods=["POST"])
