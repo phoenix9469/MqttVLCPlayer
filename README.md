@@ -94,7 +94,8 @@ deploy/install-autostart.sh      # sudo 없이, 앱을 실행할 사용자로 �
 - 전원을 켜면 바로 실행되도록 **자동 로그인**을 켜세요(GNOME: 설정 → 사용자 → 자동 로그인).
 - 영상이 계속 보이도록 **화면 꺼짐과 잠금**을 끄세요:
   `gsettings set org.gnome.desktop.session idle-delay 0 && gsettings set org.gnome.desktop.screensaver lock-enabled false`
-- 앱을 멈추려면 터미널에서 Ctrl+C(재시작 대기 5초 안에 한 번 더 누르면 반복 실행도 멈춤). 직접 다시 실행하려면 `deploy/start.sh`.
+- 환경변수 파일은 앱이 시작될 때마다 다시 읽습니다. 파일을 고친 뒤 터미널에서 **Ctrl+C를 한 번** 누르면 5초 뒤 새 설정으로 다시 시작합니다.
+- 완전히 멈추려면 재시작 대기(5초) 중에 Ctrl+C를 한 번 더 누르세요. 직접 다시 실행하려면 `bash deploy/start.sh`.
 - 자동 실행 해제: `rm ~/.config/autostart/mqttvlcplayer.desktop`
 - 아래 systemd 서비스와 **동시에 쓰지 마세요**(앱이 두 개 실행됨).
 
