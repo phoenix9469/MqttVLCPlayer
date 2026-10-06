@@ -17,8 +17,18 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TTS_ENGINES = [e.strip() for e in os.environ.get("TTS_ENGINES", "piper,espeak").split(",") if e.strip()]
 TTS_LANG = os.environ.get("TTS_LANG", "auto")  # ja, en 또는 auto(가나·한자가 있으면 ja, 아니면 en)
 TTS_LANGS = ("auto", "ja", "en")
+TTS_SPEED = float(os.environ.get("TTS_SPEED", "1.0"))  # 말하는 속도 배율 (1.2 = 20% 빠르게, 0.8 = 20% 느리게)
+ESPEAK_WPM = 175  # espeak-ng 기본 속도(분당 단어 수)
 PIPER_MODEL = os.environ.get("PIPER_MODEL", "ja_JP-tsukuyomi-chan-medium")  # 모델 이름 또는 .onnx 경로
 PIPER_DATA_DIR = os.environ.get("PIPER_DATA_DIR", os.path.join(BASE_DIR, "piper-models"))
+
+
+def parse_speed(speed):
+    """0.5~2.0 배율로 변환, 지정하지 않았거나 잘못된 값이면 기본 속도"""
+    try:
+        return max(0.5, min(float(speed), 2.0))
+    except (TypeError, ValueError):
+        return max(0.5, min(TTS_SPEED, 2.0))
 
 
 def detect_lang(text):
@@ -98,23 +108,26 @@ class PiperTTS:
     def languages(self, voice):
         return set(voice.config.language_id_map or {}) or {"ja"}
 
-    def synthesize(self, text, lang, path):
+    def synthesize(self, text, lang, path, speed):
         voice = self.voice()
         if voice is None or lang not in self.languages(voice):
             return False
         with wave.open(path, "wb") as wav_file:
-            voice.synthesize(text, wav_file, language_id=(voice.config.language_id_map or {}).get(lang))
+            # length_scale은 음소 길이 배율이라 클수록 느려짐
+            voice.synthesize(text, wav_file, length_scale=1.0 / speed,
+                             language_id=(voice.config.language_id_map or {}).get(lang))
         return True
 
 
 piper_tts = PiperTTS()
 
 
-def synthesize_espeak(text, lang, path):
+def synthesize_espeak(text, lang, path, speed):
     espeak = shutil.which("espeak-ng") or shutil.which("espeak")
     if not espeak:
         return False
-    result = subprocess.run([espeak, "-v", lang, "-w", path, text], capture_output=True, timeout=60)
+    result = subprocess.run([espeak, "-v", lang, "-s", str(round(ESPEAK_WPM * speed)), "-w", path, text],
+                            capture_output=True, timeout=60)
     return result.returncode == 0
 
 
@@ -125,10 +138,11 @@ TTS_BACKENDS = {
 }
 
 
-def synthesize(text, lang, folder):
+def synthesize(text, lang, folder, speed=None):
     """TTS_ENGINES 순서대로 시도해서 (음성 파일 경로, 엔진, 언어) 반환 (모두 실패하면 None)"""
     if lang == "auto":
         lang = detect_lang(text)
+    speed = parse_speed(speed)
     for engine in TTS_ENGINES:
         if engine not in TTS_BACKENDS:
             log.warning("Unknown TTS engine: %s", engine)
@@ -136,7 +150,7 @@ def synthesize(text, lang, folder):
         func, ext = TTS_BACKENDS[engine]
         path = os.path.join(folder, f"tts-{engine}.{ext}")
         try:
-            if func(text, lang, path):
+            if func(text, lang, path, speed):
                 log.info("TTS by %s (%s): %s", engine, lang, text)
                 return path, engine, lang
         except Exception as e:

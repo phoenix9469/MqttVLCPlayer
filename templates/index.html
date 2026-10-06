@@ -49,7 +49,7 @@
             box-sizing: border-box;
             font-size: 16px;
         }
-        #tts-volume {
+        #tts-volume, #tts-speed {
             width: 70px;
         }
         table {
@@ -138,6 +138,8 @@
             </select>
             <label for="tts-volume">볼륨:</label>
             <input type="number" id="tts-volume" min="0" max="200" value="{{ sound_volume }}">
+            <label for="tts-speed">속도:</label>
+            <input type="number" id="tts-speed" min="0.5" max="2" step="0.1" value="{{ tts_speed }}">
         </div>
         <button class="btn" id="tts-device">기기 스피커로 재생</button>
         <button class="btn" id="tts-browser">브라우저에서 듣기</button>
@@ -223,6 +225,7 @@
                 text: document.getElementById('tts-text').value,
                 lang: document.getElementById('tts-lang').value,
                 volume: document.getElementById('tts-volume').value,
+                speed: document.getElementById('tts-speed').value,
                 target: target
             };
             if (!body.text.trim()) {

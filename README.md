@@ -63,6 +63,7 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
 | `TTS_LANG` | `auto` | TTS 언어 `ja` 또는 `en`. `auto`면 가나·한자가 있을 때 `ja`, 아니면 `en` |
+| `TTS_SPEED` | `1.0` | 말하는 속도 배율(0.5~2.0). `1.2`는 20% 빠르게, `0.8`은 20% 느리게 |
 | `PIPER_MODEL` | `ja_JP-tsukuyomi-chan-medium` | piper-plus 모델 이름 또는 `.onnx` 파일 경로 |
 | `PIPER_DATA_DIR` | `./piper-models` | piper-plus 모델 저장 폴더 |
 | `STATUS_INTERVAL` | `60` | TV 전원 상태 조회 주기(초), `0`이면 조회 안 함 |
@@ -97,7 +98,7 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/lgtv/switch/set` | 구독 | `1` 켜기, `0` 끄기 |
 | `cvlc_tv/cvlc/play`, `cvlc_tv/cvlc/stop` | 구독 | 랜덤 재생 / 정지 |
 | `cvlc_tv/sound/play` | 구독 | 사운드 파일 재생. payload: `doorbell.mp3` 또는 `{"file": "doorbell.mp3", "volume": 80}` |
-| `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `玄関のドアが開きました。` 또는 `{"text": "...", "volume": 80, "lang": "ja"}` |
+| `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `玄関のドアが開きました。` 또는 `{"text": "...", "volume": 80, "lang": "ja", "speed": 1.2}` |
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |

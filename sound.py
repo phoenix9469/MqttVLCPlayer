@@ -54,11 +54,11 @@ class SoundQueue:
         self._queue.put((self._generation, "file", os.path.join(SOUNDS_FOLDER, name), parse_volume(volume)))
         return True
 
-    def say(self, text, lang=None, volume=None):
+    def say(self, text, lang=None, volume=None, speed=None):
         text = text.strip()
         if not text:
             return False
-        self._queue.put((self._generation, "tts", (text, lang or tts.TTS_LANG), parse_volume(volume)))
+        self._queue.put((self._generation, "tts", (text, lang or tts.TTS_LANG, speed), parse_volume(volume)))
         return True
 
     def play_temp(self, path, volume=None):
@@ -91,8 +91,8 @@ class SoundQueue:
         extra = [f"--gain={volume / 100:.2f}"]
         with tempfile.TemporaryDirectory() as tmp:
             if kind == "tts":
-                text, lang = target
-                result = tts.synthesize(text, lang, tmp)
+                text, lang, speed = target
+                result = tts.synthesize(text, lang, tmp, speed)
                 target = result[0] if result else None
             try:
                 # 음성 생성 중에 stop()된 경우 재생하지 않음
