@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>영상 재생 및 설정</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+        h1 {
+            text-align: center;
+        }
+        h2 {
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 30px;
+            width: 100%;
+            max-width: 600px;
+        }
+        .btn {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-right: 10px;
+            width: 100%;
+            max-width: 200px;
+            margin-bottom: 10px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .checkbox-group label {
+            margin-right: 15px;
+        }
+        table {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            border-collapse: collapse;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 표 헤더 스타일 */
+        th {
+            background-color: #007bff;
+            color: #fff;
+            padding: 12px 15px;
+            text-align: left;
+        }
+
+        /* 표 본문 스타일 */
+        td {
+            padding: 12px 15px;
+            text-align: left;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>영상 재생 및 설정</h1>
+
+    <!-- 설정 섹션 -->
+    <div class="section">
+        <h2>설정</h2>
+        <form id="config-form">
+            <div class="form-group">
+                <label for="nas_folder">NAS 폴더 경로:</label>
+                <input type="text" id="nas_folder" name="nas_folder" value="{{ config['nas_folder'] }}" required>
+            </div>
+            <div class="form-group">
+                <label for="time">영상 재생 시간:</label>
+                <input type="time" id="time" name="time" value="{{ config['time'] }}" required>
+            </div>
+            <div class="form-group">
+                <label>요일 선택:</label>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" name="days" value="sun" {% if 'sun' in config['days'] %}checked{% endif %}> 일</label>
+                    <label><input type="checkbox" name="days" value="mon" {% if 'mon' in config['days'] %}checked{% endif %}> 월</label>
+                    <label><input type="checkbox" name="days" value="tue" {% if 'tue' in config['days'] %}checked{% endif %}> 화</label>
+                    <label><input type="checkbox" name="days" value="wed" {% if 'wed' in config['days'] %}checked{% endif %}> 수</label>
+                    <label><input type="checkbox" name="days" value="thu" {% if 'thu' in config['days'] %}checked{% endif %}> 목</label>
+                    <label><input type="checkbox" name="days" value="fri" {% if 'fri' in config['days'] %}checked{% endif %}> 금</label>
+                    <label><input type="checkbox" name="days" value="sat" {% if 'sat' in config['days'] %}checked{% endif %}> 토</label>
+                </div>
+            </div>
+            <button type="submit" class="btn">설정 저장</button>
+        </form>
+    </div>
+
+    <!-- 제어 섹션 -->
+    <div class="section">
+        <h2>제어</h2>
+        <button class="btn" id="play-now">랜덤 재생 시작</button>
+        <button class="btn" id="stop-video">영상 종료</button>
+        <button class="btn" id="on-tv">TV ON</button>
+        <button class="btn" id="off-tv">TV OFF</button>
+        <a href="{{ url_for('file_list') }}">
+            <button class="btn">영상 목록 확인</button>
+        </a>
+    </div>
+
+    
+    <div class="section">
+        <h2>현재 설정값</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>설정 항목</th>
+                    <th>값</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>NAS 폴더 경로</td>
+                    <td>{{ config['nas_folder'] }}</td>
+                </tr>
+                <tr>
+                    <td>영상 재생 시간</td>
+                    <td>{{ config['time'] }}</td>
+                </tr>
+                <tr>
+                    <td>요일 선택</td>
+                    <td>{{ config['days'] | join(', ') }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <!-- 설정 업데이트 및 제어 요청 -->
+    <script>
+        document.getElementById('config-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const data = {
+                nas_folder: formData.get('nas_folder'),
+                time: formData.get('time'),
+                days: []
+            };
+
+            formData.getAll('days').forEach(function(day) {
+                data.days.push(day);
+            });
+
+            // 콘솔로 데이터 확인
+            console.log(JSON.stringify(data));
+
+            fetch('/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data) // JSON 형식으로 전송
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert("설정이 업데이트되었습니다.");
+            })
+            .catch(error => {
+                console.error("설정 업데이트 오류:", error);
+            });
+        });
+
+        document.getElementById('play-now').addEventListener('click', function() {
+            fetch('/play_now', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert("영상을 즉시 재생합니다.");
+            })
+            .catch(error => {
+                console.error("영상 재생 오류:", error);
+            });
+        });
+
+        document.getElementById('stop-video').addEventListener('click', function() {
+            fetch('/stop_video', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert("영상이 종료되었습니다.");
+            })
+            .catch(error => {
+                console.error("영상 종료 오류:", error);
+            });
+        });
+
+        document.getElementById('on-tv').addEventListener('click', function() {
+            fetch('/on_tv', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert("TV 전원이 켜졌습니다.");
+            })
+            .catch(error => {
+                console.error("TV 전원 오류:", error);
+            });
+        });
+
+        document.getElementById('off-tv').addEventListener('click', function() {
+            fetch('/off_tv', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert("TV 전원이 꺼졌습니다.");
+            })
+            .catch(error => {
+                console.error("TV 전원 오류:", error);
+            });
+        });
+    </script>
+
+</body>
+</html>
