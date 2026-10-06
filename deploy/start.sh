@@ -1,7 +1,7 @@
 #!/bin/bash
 # MqttVLCPlayer 실행 스크립트: 환경변수 파일을 읽고 앱을 실행한다.
 # 앱이 종료되면 5초 뒤 다시 실행한다. 멈추려면 Ctrl+C.
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 ENV_FILE="${ENV_FILE:-/etc/mqttvlcplayer.env}"
 
 if [ -r "$ENV_FILE" ]; then

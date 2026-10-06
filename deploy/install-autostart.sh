@@ -10,16 +10,17 @@ DESKTOP="$HOME/.config/autostart/mqttvlcplayer.desktop"
 mkdir -p "$(dirname "$LAUNCHER")" "$(dirname "$DESKTOP")"
 cat > "$LAUNCHER" <<LAUNCH
 #!/bin/bash
-APP_DIR="$APP_DIR"
-until [ -x "\$APP_DIR/deploy/start.sh" ]; do
+export APP_DIR="$APP_DIR"
+until [ -f "\$APP_DIR/deploy/start.sh" ]; do
     echo "\$APP_DIR 를 기다리는 중... (NAS 연결 대기)"
     sleep 5
 done
 # Ctrl+C로 앱을 멈춰도 이 창은 닫히지 않게 한다
 trap 'true' INT
-"\$APP_DIR/deploy/start.sh"
+# 실행 권한이나 줄 끝(CRLF)에 영향받지 않도록 bash로 직접 실행
+bash <(tr -d '\r' < "\$APP_DIR/deploy/start.sh")
 echo
-echo "MqttVLCPlayer가 멈췄습니다. 다시 실행: \$APP_DIR/deploy/start.sh"
+echo "MqttVLCPlayer가 멈췄습니다. 다시 실행: bash \$APP_DIR/deploy/start.sh"
 exec bash
 LAUNCH
 chmod +x "$LAUNCHER" "$APP_DIR/deploy/start.sh"
