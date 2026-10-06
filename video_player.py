@@ -446,8 +446,13 @@ def main():
     client.loop_start()
     if STATUS_INTERVAL > 0:
         threading.Thread(target=status_loop, daemon=True).start()
+    exit_code = 0
     try:
         app.run(host=WEB_HOST, port=WEB_PORT)
+    except SystemExit as e:
+        # 주소/포트 오류 등으로 웹 서버를 시작하지 못한 경우 (값에 숨은 문자가 있는지 repr로 표시)
+        log.error("Web server could not start (WEB_HOST=%r, WEB_PORT=%r)", WEB_HOST, WEB_PORT)
+        exit_code = e.code if isinstance(e.code, int) else 1
     finally:
         stop_event.set()
         player.stop()
@@ -458,6 +463,10 @@ def main():
             pass
         client.loop_stop()
         client.disconnect()
+    # 정리를 마쳤으니 바로 종료한다. 백그라운드에서 TTS 모델(onnxruntime)을 불러오는 중에
+    # 일반 종료 절차를 밟으면 "terminate called without an active exception"으로 비정상 종료될 수 있음
+    logging.shutdown()
+    os._exit(exit_code)
 
 
 if __name__ == "__main__":

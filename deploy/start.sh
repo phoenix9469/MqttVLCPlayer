@@ -5,8 +5,9 @@ APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 ENV_FILE="${ENV_FILE:-/etc/mqttvlcplayer.env}"
 
 if [ -r "$ENV_FILE" ]; then
+    # Windows에서 편집해 줄 끝에 \r이 붙은 파일도 읽을 수 있게 지우고 불러옴
     set -a
-    . "$ENV_FILE"
+    . <(tr -d '\r' < "$ENV_FILE")
     set +a
 elif [ -e "$ENV_FILE" ]; then
     echo "경고: $ENV_FILE 을 읽을 권한이 없습니다. (sudo chown root:$(id -un) $ENV_FILE; sudo chmod 640 $ENV_FILE)"
