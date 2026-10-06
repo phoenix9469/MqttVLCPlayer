@@ -17,9 +17,15 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 ```bash
 git clone --recurse-submodules https://github.com/phoenix9469/MqttVLCPlayer.git
 cd MqttVLCPlayer
-sudo apt install vlc espeak-ng   # espeak-ng: 오프라인 TTS(gTTS 실패 시 대체)
+sudo apt install vlc espeak-ng   # espeak-ng: piper-plus가 지원하지 않는 언어(한국어 등)용 TTS
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+```
+
+일본어 음성 모델(약 40MB)을 미리 받아 둡니다. 받지 않으면 첫 음성 안내 때 자동으로 내려받습니다(인터넷 필요).
+
+```bash
+.venv/bin/piper --download-model ja_JP-tsukuyomi-chan-medium --download-dir piper-models
 ```
 
 이미 clone했다면 `git submodule update --init`으로 `libLGTV_serial`을 받습니다.
@@ -42,8 +48,10 @@ python3 -m venv .venv
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 VLC가 자동으로 결정 |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
-| `TTS_ENGINE` | `gtts` | `gtts`(Google, 인터넷 필요, 음질 좋음) 또는 `espeak`(오프라인). `gtts` 실패 시 자동으로 `espeak-ng` 사용 |
-| `TTS_LANG` | `ko` | TTS 언어 |
+| `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 언어를 지원하지 않거나 실패하면 다음 엔진 사용. `piper`(piper-plus, 로컬), `espeak`(espeak-ng, 로컬, 음질 낮음), `gtts`(Google, 인터넷 필요) |
+| `TTS_LANG` | `auto` | TTS 언어. `auto`면 문장의 글자로 판별(한글→`ko`, 가나·한자→`ja`, 그 외→`en`) |
+| `PIPER_MODEL` | `ja_JP-tsukuyomi-chan-medium` | piper-plus 모델 이름 또는 `.onnx` 파일 경로 |
+| `PIPER_DATA_DIR` | `./piper-models` | piper-plus 모델 저장 폴더 |
 | `STATUS_INTERVAL` | `60` | TV 전원 상태 조회 주기(초), `0`이면 조회 안 함 |
 | `CONFIG_FILE` | `./config.json` | 웹 UI 설정 저장 위치 |
 | `PLAYLIST_PATH` | `./playlist.m3u8` | 생성되는 재생목록 위치 |
@@ -76,7 +84,7 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/lgtv/switch/set` | 구독 | `1` 켜기, `0` 끄기 |
 | `cvlc_tv/cvlc/play`, `cvlc_tv/cvlc/stop` | 구독 | 랜덤 재생 / 정지 |
 | `cvlc_tv/sound/play` | 구독 | 사운드 파일 재생. payload: `doorbell.mp3` 또는 `{"file": "doorbell.mp3", "volume": 80}` |
-| `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `현관문이 열렸습니다` 또는 `{"text": "...", "volume": 80, "lang": "ko"}` |
+| `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `현관문이 열렸습니다` 또는 `{"text": "...", "volume": 80, "lang": "ja"}` |
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
@@ -118,6 +126,15 @@ automation:
           topic: cvlc_tv/sound/say
           payload: '{"text": "좋은 아침입니다. 오늘은 {{ now().strftime(''%m월 %d일'') }}입니다.", "volume": 70}'
 ```
+
+### TTS 엔진
+
+기본 엔진은 [piper-plus](https://github.com/ayutaz/piper-plus)입니다. 기기 안에서만 동작하는 신경망 TTS입니다.
+기본 모델 `tsukuyomi-chan`은 일본어 음성이며, 같은 모델로 영어·중국어·스페인어·프랑스어·포르투갈어도 읽습니다.
+한국어 모델은 없어서 한국어 문장은 다음 엔진(`espeak-ng`)이 읽습니다. 한국어를 더 자연스럽게 읽게 하려면
+`TTS_ENGINES=piper,gtts,espeak`로 설정하세요. 이때 한국어 문장은 Google로 전송됩니다.
+
+모델은 서버를 시작할 때 미리 불러옵니다. 불러오지 못하면 5분 뒤 다시 시도하고, 그동안은 다음 엔진을 사용합니다.
 
 영상과 알림 소리가 동시에 나려면 기기에서 PulseAudio 또는 PipeWire를 사용해야 합니다.
 ALSA 장치를 직접 사용하는 환경에서는 두 번째 소리가 재생되지 않을 수 있습니다.

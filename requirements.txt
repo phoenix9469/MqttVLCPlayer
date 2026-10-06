@@ -1,4 +1,5 @@
 flask>=3.0
 paho-mqtt>=2.0
 pyserial>=3.0  # libLGTV_serial
-gTTS>=2.3  # TTS (선택, 없으면 espeak-ng 사용)
+piper-plus>=1.13  # 로컬 TTS (일본어 등)
+gTTS>=2.3  # 선택: TTS_ENGINES에 gtts를 넣을 때만 사용

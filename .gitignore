@@ -5,3 +5,4 @@ config.json
 playlist.m3u8
 mqttvlcplayer.env
 .vscode/
+piper-models/
