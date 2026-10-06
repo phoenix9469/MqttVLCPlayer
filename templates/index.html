@@ -11,8 +11,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
+            box-sizing: border-box;
             margin: 0;
             background-color: #f8f9fa;
         }
@@ -44,12 +44,13 @@
         .form-group {
             margin-bottom: 15px;
         }
-        .checkbox-group {
-            display: flex;
-            flex-wrap: wrap;
+        #tts-text {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 16px;
         }
-        .checkbox-group label {
-            margin-right: 15px;
+        #tts-volume {
+            width: 70px;
         }
         table {
             width: 100%;
@@ -118,12 +119,30 @@
             </select>
             <button class="btn" id="sound-play">소리 재생</button>
         </div>
+        <button class="btn" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
+    </div>
+
+    <!-- TTS 테스트 섹션 -->
+    <div class="section">
+        <h2>TTS 테스트</h2>
         <div class="form-group">
             <label for="tts-text">읽을 문장:</label>
-            <input type="text" id="tts-text" placeholder="예: 현관문이 열렸습니다">
-            <button class="btn" id="tts-say">음성 안내</button>
+            <textarea id="tts-text" rows="3" placeholder="例: 玄関のドアが開きました。 / The front door is open."></textarea>
         </div>
-        <button class="btn" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
+        <div class="form-group">
+            <label for="tts-lang">언어:</label>
+            <select id="tts-lang">
+                <option value="auto">자동</option>
+                <option value="ja">日本語</option>
+                <option value="en">English</option>
+            </select>
+            <label for="tts-volume">볼륨:</label>
+            <input type="number" id="tts-volume" min="0" max="200" value="{{ sound_volume }}">
+        </div>
+        <button class="btn" id="tts-device">기기 스피커로 재생</button>
+        <button class="btn" id="tts-browser">브라우저에서 듣기</button>
+        <p id="tts-status"></p>
+        <audio id="tts-audio" controls hidden></audio>
     </div>
 
     <div class="section">
@@ -197,10 +216,50 @@
                      "사운드 파일을 재생하지 못했습니다.");
         });
 
-        document.getElementById('tts-say').addEventListener('click', function() {
-            postJson('/sound/say', { text: document.getElementById('tts-text').value },
-                     "읽을 문장을 입력하세요.");
-        });
+        function ttsTest(target) {
+            const status = document.getElementById('tts-status');
+            const audio = document.getElementById('tts-audio');
+            const body = {
+                text: document.getElementById('tts-text').value,
+                lang: document.getElementById('tts-lang').value,
+                volume: document.getElementById('tts-volume').value,
+                target: target
+            };
+            if (!body.text.trim()) {
+                status.textContent = "읽을 문장을 입력하세요.";
+                return;
+            }
+            status.textContent = "음성을 만드는 중...";
+            fetch('/tts/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(async response => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || "음성을 만들지 못했습니다.");
+                }
+                if (target === 'browser') {
+                    const blob = await response.blob();
+                    audio.src = URL.createObjectURL(blob);
+                    audio.hidden = false;
+                    audio.play();
+                    return { engine: response.headers.get('X-TTS-Engine'), lang: response.headers.get('X-TTS-Lang') };
+                }
+                return response.json();
+            })
+            .then(data => {
+                const where = target === 'browser' ? "브라우저에서 재생" : "기기 스피커로 재생";
+                status.textContent = `${where} (엔진: ${data.engine}, 언어: ${data.lang})`;
+            })
+            .catch(error => {
+                status.textContent = error.message;
+            });
+        }
+
+        document.getElementById('tts-device').addEventListener('click', () => ttsTest('device'));
+        document.getElementById('tts-browser').addEventListener('click', () => ttsTest('browser'));
 
         document.querySelectorAll('button[data-url]').forEach(function(button) {
             button.addEventListener('click', function() {
