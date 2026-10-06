@@ -6,6 +6,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 ## 기능
 
 - **랜덤 재생 / 정지**: NAS 폴더의 `.mp4`, `.mkv`, `.avi` 파일을 섞어서 재생목록을 만들고 재생합니다. 재생은 항상 하나만 유지됩니다.
+- **시계 표시**: 재생 중 화면 좌측 상단에 기기의 현재 시각(`HH:MM`)을 표시합니다.
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
@@ -36,6 +37,8 @@ python3 -m venv .venv
 | `NAS_FOLDER` | `/mv` | 영상 폴더 기본값 (웹 UI에서 바꾸면 `config.json`에 저장) |
 | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `5000` | 웹 UI 주소 |
 | `WEB_USERNAME` / `WEB_PASSWORD` | 없음 | 설정하면 웹 UI에 HTTP Basic 인증 적용 |
+| `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
+| `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 VLC가 자동으로 결정 |
 | `STATUS_INTERVAL` | `60` | TV 전원 상태 조회 주기(초), `0`이면 조회 안 함 |
 | `CONFIG_FILE` | `./config.json` | 웹 UI 설정 저장 위치 |
 | `PLAYLIST_PATH` | `./playlist.m3u8` | 생성되는 재생목록 위치 |

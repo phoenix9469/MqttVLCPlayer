@@ -34,8 +34,18 @@ WEB_PASSWORD = os.environ.get("WEB_PASSWORD")
 # TV 전원 상태 조회 주기(초), 0이면 조회하지 않음
 STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 
+# 재생 화면 좌측 상단에 표시할 시계 (strftime 형식, 빈 값이면 표시 안 함)
+CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
+CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 VLC가 화면에 맞춰 자동 결정
+
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
 CVLC_ARGS = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
+if CLOCK_FORMAT:
+    # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
+    CVLC_ARGS += ["--sub-source=marq", f"--marq-marquee={CLOCK_FORMAT}", "--marq-position=5",
+                  "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
+    if CLOCK_SIZE > 0:
+        CVLC_ARGS.append(f"--marq-size={CLOCK_SIZE}")
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
