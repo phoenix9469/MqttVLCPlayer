@@ -65,14 +65,18 @@ class PiperTTS:
 
         model, config_path = PIPER_MODEL, None
         if not os.path.exists(model):
-            # 모델 이름이면 PIPER_DATA_DIR에서 찾고, 없으면 내려받음 (최초 1회 인터넷 필요)
-            os.makedirs(PIPER_DATA_DIR, exist_ok=True)
-            voices = download.get_voices(PIPER_DATA_DIR)
-            for info in list(voices.values()):
-                for alias in info.get("aliases", []):
-                    voices[alias] = {"_is_alias": True, **info}
-            download.ensure_voice_exists(model, [PIPER_DATA_DIR], PIPER_DATA_DIR, voices)
-            model, config_path = download.find_voice(model, [PIPER_DATA_DIR])
+            # 모델 이름이면 PIPER_DATA_DIR에서 찾고, 없을 때만 내려받음 (최초 1회 인터넷 필요).
+            # ensure_voice_exists는 파일 크기가 목록과 다르면 매번 다시 받으므로 먼저 찾아본다
+            try:
+                model, config_path = download.find_voice(model, [PIPER_DATA_DIR])
+            except ValueError:
+                os.makedirs(PIPER_DATA_DIR, exist_ok=True)
+                voices = download.get_voices(PIPER_DATA_DIR)
+                for info in list(voices.values()):
+                    for alias in info.get("aliases", []):
+                        voices[alias] = {"_is_alias": True, **info}
+                download.ensure_voice_exists(model, [PIPER_DATA_DIR], PIPER_DATA_DIR, voices)
+                model, config_path = download.find_voice(model, [PIPER_DATA_DIR])
         log.info("Loading piper-plus model %s", model)
         voice = piper.PiperVoice.load(model, config_path=config_path)
         if "en" in self.languages(voice):
