@@ -4,17 +4,18 @@ import logging
 import os
 import random
 import re
-import queue
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
-import time
-import wave
 
 import paho.mqtt.client as mqtt
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
+
+import tts
+from player import Player
+from sound import get_sound_files, parse_sound_payload, sounds, SOUND_VOLUME
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqttvlcplayer")
@@ -44,19 +45,8 @@ STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
 CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 VLC가 화면에 맞춰 자동 결정
 
-# 알림 소리: 재생 가능한 사운드 파일 폴더, 기본 볼륨(0~100), TTS 설정
-SOUNDS_FOLDER = os.environ.get("SOUNDS_FOLDER", os.path.join(BASE_DIR, "sounds"))
-SOUND_VOLUME = int(os.environ.get("SOUND_VOLUME", "100"))
-# 사용할 TTS 엔진을 시도할 순서대로 지정. 언어를 지원하지 않거나 실패하면 다음 엔진 사용
-#   piper: piper-plus(일본어·영어), espeak: espeak-ng(음질 낮음, piper를 쓸 수 없을 때 대체용)
-TTS_ENGINES = [e.strip() for e in os.environ.get("TTS_ENGINES", "piper,espeak").split(",") if e.strip()]
-TTS_LANG = os.environ.get("TTS_LANG", "auto")  # ja, en 또는 auto(가나·한자가 있으면 ja, 아니면 en)
-TTS_LANGS = ("auto", "ja", "en")
-PIPER_MODEL = os.environ.get("PIPER_MODEL", "ja_JP-tsukuyomi-chan-medium")  # 모델 이름 또는 .onnx 경로
-PIPER_DATA_DIR = os.environ.get("PIPER_DATA_DIR", os.path.join(BASE_DIR, "piper-models"))
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
-SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".flac", ".m4a")
 CVLC_ARGS = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
 if CLOCK_FORMAT:
     # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
@@ -64,7 +54,6 @@ if CLOCK_FORMAT:
                   "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
     if CLOCK_SIZE > 0:
         CVLC_ARGS.append(f"--marq-size={CLOCK_SIZE}")
-SOUND_CVLC_ARGS = ["cvlc", "--play-and-exit", "--no-video"]
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
@@ -184,52 +173,6 @@ def create_m3u8_playlist():
     return len(video_files)
 
 
-class Player:
-    """cvlc 프로세스를 하나만 유지하는 플레이어"""
-
-    def __init__(self, args):
-        self._args = args
-        self._lock = threading.Lock()
-        self._process = None
-
-    def _stop_locked(self):
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                self._process.wait()
-            log.info("Stopped %s", self._process.args[-1])
-        self._process = None
-
-    def play(self, target, extra_args=()):
-        """기존 재생을 종료하고 target(파일 또는 재생목록) 재생"""
-        with self._lock:
-            self._stop_locked()
-            try:
-                self._process = subprocess.Popen(self._args + list(extra_args) + [target])
-            except OSError as e:
-                log.error("Failed to start cvlc: %s", e)
-                return False
-            log.info("Playing %s", target)
-            return True
-
-    def stop(self):
-        with self._lock:
-            self._stop_locked()
-
-    def wait(self):
-        """재생이 끝나거나 stop()될 때까지 대기"""
-        process = self._process
-        if process:
-            process.wait()
-
-    @property
-    def playing(self):
-        return self._process is not None and self._process.poll() is None
-
-
 player = Player(CVLC_ARGS)
 
 
@@ -238,220 +181,6 @@ def play_random():
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
     return player.play(PLAYLIST_PATH)
-
-
-# ---------------------------------------------------------------------------
-# 알림 소리 / TTS (영상과 별도의 cvlc로 동시에 재생)
-# ---------------------------------------------------------------------------
-
-def get_sound_files():
-    try:
-        names = os.listdir(SOUNDS_FOLDER)
-    except OSError:
-        return []
-    return sorted(f for f in names if f.lower().endswith(SOUND_EXTENSIONS))
-
-
-def detect_lang(text):
-    """가나·한자가 있으면 일본어, 아니면 영어"""
-    return "ja" if re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", text) else "en"
-
-
-def ensure_nltk_data():
-    """영어 발음 변환(g2p_en)에 필요한 NLTK 데이터가 없으면 내려받음 (최초 1회 인터넷 필요)"""
-    try:
-        import nltk
-    except ImportError:
-        return
-    # g2p_en은 예전 이름의 태거만 받지만, 최신 NLTK는 averaged_perceptron_tagger_eng를 찾음
-    for path, name in (("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
-                       ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
-                       ("corpora/cmudict", "cmudict")):
-        try:
-            nltk.data.find(path)
-        except LookupError:
-            if not nltk.download(name, quiet=True):
-                log.warning("Failed to download NLTK data %s (English TTS may not work)", name)
-
-
-class PiperTTS:
-    """piper-plus 음성 모델을 한 번만 로드해서 재사용"""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._voice = None
-        self._failed_at = None
-
-    def _load(self):
-        from piper import PiperVoice
-
-        model, config_path = PIPER_MODEL, None
-        if not os.path.exists(model):
-            # 모델 이름이면 PIPER_DATA_DIR에서 찾고, 없으면 내려받음 (최초 1회 인터넷 필요)
-            from piper.download import ensure_voice_exists, find_voice, get_voices
-            os.makedirs(PIPER_DATA_DIR, exist_ok=True)
-            voices = get_voices(PIPER_DATA_DIR)
-            for info in list(voices.values()):
-                for alias in info.get("aliases", []):
-                    voices[alias] = {"_is_alias": True, **info}
-            ensure_voice_exists(model, [PIPER_DATA_DIR], PIPER_DATA_DIR, voices)
-            model, config_path = find_voice(model, [PIPER_DATA_DIR])
-        log.info("Loading piper-plus model %s", model)
-        voice = PiperVoice.load(model, config_path=config_path)
-        if "en" in self.languages(voice):
-            ensure_nltk_data()
-        return voice
-
-    def voice(self):
-        """로드된 음성 반환, 사용할 수 없으면 None (실패하면 5분 뒤에 다시 시도)"""
-        with self._lock:
-            retry = self._failed_at is None or time.monotonic() - self._failed_at > 300
-            if self._voice is None and retry:
-                try:
-                    self._voice = self._load()
-                except Exception as e:
-                    log.error("piper-plus unavailable: %s", e)
-                    self._failed_at = time.monotonic()
-            return self._voice
-
-    def languages(self, voice):
-        return set(voice.config.language_id_map or {}) or {"ja"}
-
-    def synthesize(self, text, lang, path):
-        voice = self.voice()
-        if voice is None or lang not in self.languages(voice):
-            return False
-        with wave.open(path, "wb") as wav_file:
-            voice.synthesize(text, wav_file, language_id=(voice.config.language_id_map or {}).get(lang))
-        return True
-
-
-piper_tts = PiperTTS()
-
-
-def synthesize_espeak(text, lang, path):
-    espeak = shutil.which("espeak-ng") or shutil.which("espeak")
-    if not espeak:
-        return False
-    result = subprocess.run([espeak, "-v", lang, "-w", path, text], capture_output=True, timeout=60)
-    return result.returncode == 0
-
-
-# 엔진 이름: (합성 함수, 출력 파일 확장자)
-TTS_BACKENDS = {
-    "piper": (piper_tts.synthesize, "wav"),
-    "espeak": (synthesize_espeak, "wav"),
-}
-
-
-def synthesize(text, lang, folder):
-    """TTS_ENGINES 순서대로 시도해서 (음성 파일 경로, 엔진, 언어) 반환 (모두 실패하면 None)"""
-    if lang == "auto":
-        lang = detect_lang(text)
-    for engine in TTS_ENGINES:
-        if engine not in TTS_BACKENDS:
-            log.warning("Unknown TTS engine: %s", engine)
-            continue
-        func, ext = TTS_BACKENDS[engine]
-        path = os.path.join(folder, f"tts-{engine}.{ext}")
-        try:
-            if func(text, lang, path):
-                log.info("TTS by %s (%s): %s", engine, lang, text)
-                return path, engine, lang
-        except Exception as e:
-            log.warning("TTS engine %s failed: %s", engine, e)
-    log.error("No TTS engine could speak %r (lang=%s)", text, lang)
-    return None
-
-
-def parse_volume(volume):
-    """0~200 정수로 변환, 지정하지 않았거나 잘못된 값이면 기본 볼륨"""
-    try:
-        return max(0, min(int(volume), 200))
-    except (TypeError, ValueError):
-        return SOUND_VOLUME
-
-
-class SoundQueue:
-    """알림 소리를 순서대로 재생 (예: 차임 → 음성 안내)"""
-
-    def __init__(self):
-        self._queue = queue.Queue()
-        self._player = Player(SOUND_CVLC_ARGS)
-        self._generation = 0  # stop() 할 때마다 증가, 이전에 요청된 소리는 재생하지 않음
-        threading.Thread(target=self._worker, daemon=True).start()
-
-    def play(self, name, volume=None):
-        """사운드 폴더 안의 파일만 재생"""
-        if name not in get_sound_files():
-            log.warning("Unknown sound file: %r", name)
-            return False
-        self._queue.put((self._generation, "file", os.path.join(SOUNDS_FOLDER, name), parse_volume(volume)))
-        return True
-
-    def say(self, text, lang=None, volume=None):
-        text = text.strip()
-        if not text:
-            return False
-        self._queue.put((self._generation, "tts", (text, lang or TTS_LANG), parse_volume(volume)))
-        return True
-
-    def play_temp(self, path, volume=None):
-        """이미 만들어 둔 음성 파일을 재생하고 삭제"""
-        self._queue.put((self._generation, "temp", path, parse_volume(volume)))
-
-    def stop(self):
-        """대기 중인 소리를 버리고 현재 소리 종료"""
-        self._generation += 1
-        drained = []
-        try:
-            while True:
-                drained.append(self._queue.get_nowait())
-        except queue.Empty:
-            pass
-        self._player.stop()
-        for _, kind, target, _ in drained:
-            if kind == "temp":
-                shutil.rmtree(os.path.dirname(target), ignore_errors=True)
-
-    def _worker(self):
-        while True:
-            generation, kind, target, volume = self._queue.get()
-            try:
-                self._play_item(generation, kind, target, volume)
-            except Exception:
-                log.exception("Sound playback failed")
-
-    def _play_item(self, generation, kind, target, volume):
-        extra = [f"--gain={volume / 100:.2f}"]
-        with tempfile.TemporaryDirectory() as tmp:
-            if kind == "tts":
-                text, lang = target
-                result = synthesize(text, lang, tmp)
-                target = result[0] if result else None
-            try:
-                # 음성 생성 중에 stop()된 경우 재생하지 않음
-                if target and generation == self._generation:
-                    self._player.play(target, extra)
-                    self._player.wait()
-            finally:
-                if kind == "temp":
-                    shutil.rmtree(os.path.dirname(target), ignore_errors=True)
-
-
-sounds = SoundQueue()
-
-
-def parse_sound_payload(payload, key):
-    """payload: 그냥 문자열 또는 {"<key>": ..., "volume": 80, "lang": "ja"} JSON"""
-    if payload.lstrip().startswith("{"):
-        try:
-            data = json.loads(payload)
-            if isinstance(data, dict):
-                return str(data.get(key, "")), data
-        except ValueError:
-            pass
-    return payload, {}
 
 
 # ---------------------------------------------------------------------------
@@ -658,15 +387,15 @@ def tts_test():
     """TTS 테스트: 음성을 바로 만들어 기기 스피커로 재생하거나(target=device) 브라우저로 돌려줌(target=browser)"""
     data = request.get_json(silent=True) or {}
     text = str(data.get("text", "")).strip()
-    lang = data.get("lang") or TTS_LANG
-    if not text or lang not in TTS_LANGS:
+    lang = data.get("lang") or tts.TTS_LANG
+    if not text or lang not in tts.TTS_LANGS:
         return jsonify({"status": "error", "message": "문장과 언어(auto/ja/en)를 확인하세요."}), 400
     tmp = tempfile.mkdtemp(prefix="tts-")
-    result = synthesize(text, lang, tmp)
-    if not result:
+    synthesized = tts.synthesize(text, lang, tmp)
+    if not synthesized:
         shutil.rmtree(tmp, ignore_errors=True)
         return jsonify({"status": "error", "message": "음성을 만들지 못했습니다. 서버 로그를 확인하세요."}), 500
-    path, engine, used_lang = result
+    path, engine, used_lang = synthesized
     if data.get("target") == "browser":
         with open(path, "rb") as f:
             audio = f.read()
@@ -703,9 +432,7 @@ def play_video():
 
 
 def main():
-    if "piper" in TTS_ENGINES:
-        # 첫 음성 안내가 늦지 않도록 모델을 미리 로드
-        threading.Thread(target=piper_tts.voice, daemon=True).start()
+    tts.preload()
     client.connect_async(MQTT_HOST, MQTT_PORT)
     client.loop_start()
     if STATUS_INTERVAL > 0:

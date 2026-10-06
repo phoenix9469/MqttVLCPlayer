@@ -12,6 +12,17 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
 
+## 파일 구성
+
+| 파일 | 역할 |
+|---|---|
+| `video_player.py` | 실행 진입점. 영상 재생, LG TV 제어, MQTT(Home Assistant), 웹 UI |
+| `sound.py` | 알림 소리 대기열. 사운드 파일과 TTS 음성을 요청 순서대로 재생 |
+| `tts.py` | TTS 엔진(piper-plus, espeak-ng). 문장을 WAV 파일로 생성 |
+| `player.py` | cvlc 프로세스 실행/종료 (영상과 알림 소리가 함께 사용) |
+| `templates/` | 웹 UI 화면 |
+| `libLGTV_serial/` | LG TV RS-232 제어 라이브러리 (서브모듈) |
+
 ## 설치
 
 ```bash
