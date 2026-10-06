@@ -3,8 +3,11 @@ import logging
 import os
 import random
 import re
+import queue
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 
 import paho.mqtt.client as mqtt
@@ -38,7 +41,14 @@ STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
 CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 VLC가 화면에 맞춰 자동 결정
 
+# 알림 소리: 재생 가능한 사운드 파일 폴더, 기본 볼륨(0~100), TTS 설정
+SOUNDS_FOLDER = os.environ.get("SOUNDS_FOLDER", os.path.join(BASE_DIR, "sounds"))
+SOUND_VOLUME = int(os.environ.get("SOUND_VOLUME", "100"))
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "gtts")  # gtts(Google, 인터넷 필요) 또는 espeak(오프라인)
+TTS_LANG = os.environ.get("TTS_LANG", "ko")
+
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
+SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".flac", ".m4a")
 CVLC_ARGS = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
 if CLOCK_FORMAT:
     # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
@@ -46,6 +56,7 @@ if CLOCK_FORMAT:
                   "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
     if CLOCK_SIZE > 0:
         CVLC_ARGS.append(f"--marq-size={CLOCK_SIZE}")
+SOUND_CVLC_ARGS = ["cvlc", "--play-and-exit", "--no-video"]
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
@@ -56,6 +67,9 @@ TOPIC_TV_SWITCH = "cvlc_tv/lgtv/switch"
 TOPIC_TV_SWITCH_SET = "cvlc_tv/lgtv/switch/set"
 TOPIC_PLAY = "cvlc_tv/cvlc/play"
 TOPIC_STOP = "cvlc_tv/cvlc/stop"
+TOPIC_SOUND_PLAY = "cvlc_tv/sound/play"
+TOPIC_SOUND_SAY = "cvlc_tv/sound/say"
+TOPIC_SOUND_STOP = "cvlc_tv/sound/stop"
 
 DEVICE = {
     "name": "Video Control Server",
@@ -106,6 +120,22 @@ DISCOVERY = [
         "state_on": "1",
         "state_off": "0",
     }),
+    # notify.send_message의 message가 그대로 payload로 전달됨
+    ("homeassistant/notify/cvlc_tv_sound/config", {
+        "name": "NOTIFY_CVLC_SOUND",
+        "unique_id": "CVLC_SOUND",
+        "command_topic": TOPIC_SOUND_PLAY,
+    }),
+    ("homeassistant/notify/cvlc_tv_say/config", {
+        "name": "NOTIFY_CVLC_TTS",
+        "unique_id": "CVLC_TTS",
+        "command_topic": TOPIC_SOUND_SAY,
+    }),
+    ("homeassistant/button/cvlc_tv_sound_stop/config", {
+        "name": "BTN_CVLC_SOUND_STOP",
+        "unique_id": "CVLC_SOUND_STOP",
+        "command_topic": TOPIC_SOUND_STOP,
+    }),
 ]
 
 app = Flask(__name__)
@@ -149,7 +179,8 @@ def create_m3u8_playlist():
 class Player:
     """cvlc 프로세스를 하나만 유지하는 플레이어"""
 
-    def __init__(self):
+    def __init__(self, args):
+        self._args = args
         self._lock = threading.Lock()
         self._process = None
 
@@ -161,15 +192,15 @@ class Player:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait()
-            log.info("Video stopped.")
+            log.info("Stopped %s", self._process.args[-1])
         self._process = None
 
-    def play(self, target):
+    def play(self, target, extra_args=()):
         """기존 재생을 종료하고 target(파일 또는 재생목록) 재생"""
         with self._lock:
             self._stop_locked()
             try:
-                self._process = subprocess.Popen(CVLC_ARGS + [target])
+                self._process = subprocess.Popen(self._args + list(extra_args) + [target])
             except OSError as e:
                 log.error("Failed to start cvlc: %s", e)
                 return False
@@ -180,12 +211,18 @@ class Player:
         with self._lock:
             self._stop_locked()
 
+    def wait(self):
+        """재생이 끝나거나 stop()될 때까지 대기"""
+        process = self._process
+        if process:
+            process.wait()
+
     @property
     def playing(self):
         return self._process is not None and self._process.poll() is None
 
 
-player = Player()
+player = Player(CVLC_ARGS)
 
 
 def play_random():
@@ -193,6 +230,117 @@ def play_random():
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
     return player.play(PLAYLIST_PATH)
+
+
+# ---------------------------------------------------------------------------
+# 알림 소리 / TTS (영상과 별도의 cvlc로 동시에 재생)
+# ---------------------------------------------------------------------------
+
+def get_sound_files():
+    try:
+        names = os.listdir(SOUNDS_FOLDER)
+    except OSError:
+        return []
+    return sorted(f for f in names if f.lower().endswith(SOUND_EXTENSIONS))
+
+
+def synthesize(text, lang, folder):
+    """text를 음성 파일로 만들어 경로 반환 (실패 시 None). gTTS 실패 시 espeak-ng로 대체"""
+    if TTS_ENGINE == "gtts":
+        path = os.path.join(folder, "tts.mp3")
+        try:
+            from gtts import gTTS
+            gTTS(text, lang=lang, timeout=10).save(path)
+            return path
+        except Exception as e:
+            log.warning("gTTS failed, falling back to espeak-ng: %s", e)
+    espeak = shutil.which("espeak-ng") or shutil.which("espeak")
+    if not espeak:
+        log.error("No TTS engine available (install gTTS or espeak-ng)")
+        return None
+    path = os.path.join(folder, "tts.wav")
+    result = subprocess.run([espeak, "-v", lang, "-w", path, text], capture_output=True, timeout=60)
+    if result.returncode != 0:
+        log.error("espeak-ng failed: %s", result.stderr.decode(errors="replace").strip())
+        return None
+    return path
+
+
+def parse_volume(volume):
+    """0~200 정수로 변환, 지정하지 않았거나 잘못된 값이면 기본 볼륨"""
+    try:
+        return max(0, min(int(volume), 200))
+    except (TypeError, ValueError):
+        return SOUND_VOLUME
+
+
+class SoundQueue:
+    """알림 소리를 순서대로 재생 (예: 차임 → 음성 안내)"""
+
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._player = Player(SOUND_CVLC_ARGS)
+        self._generation = 0  # stop() 할 때마다 증가, 이전에 요청된 소리는 재생하지 않음
+        threading.Thread(target=self._worker, daemon=True).start()
+
+    def play(self, name, volume=None):
+        """사운드 폴더 안의 파일만 재생"""
+        if name not in get_sound_files():
+            log.warning("Unknown sound file: %r", name)
+            return False
+        self._queue.put((self._generation, "file", os.path.join(SOUNDS_FOLDER, name), parse_volume(volume)))
+        return True
+
+    def say(self, text, lang=None, volume=None):
+        text = text.strip()
+        if not text:
+            return False
+        self._queue.put((self._generation, "tts", (text, lang or TTS_LANG), parse_volume(volume)))
+        return True
+
+    def stop(self):
+        """대기 중인 소리를 버리고 현재 소리 종료"""
+        self._generation += 1
+        try:
+            while True:
+                self._queue.get_nowait()
+        except queue.Empty:
+            pass
+        self._player.stop()
+
+    def _worker(self):
+        while True:
+            generation, kind, target, volume = self._queue.get()
+            try:
+                self._play_item(generation, kind, target, volume)
+            except Exception:
+                log.exception("Sound playback failed")
+
+    def _play_item(self, generation, kind, target, volume):
+        extra = [f"--gain={volume / 100:.2f}"]
+        with tempfile.TemporaryDirectory() as tmp:
+            if kind == "tts":
+                text, lang = target
+                target = synthesize(text, lang, tmp)
+            # 음성 생성 중에 stop()된 경우 재생하지 않음
+            if target and generation == self._generation:
+                self._player.play(target, extra)
+                self._player.wait()
+
+
+sounds = SoundQueue()
+
+
+def parse_sound_payload(payload, key):
+    """payload: 그냥 문자열 또는 {"<key>": ..., "volume": 80, "lang": "ko"} JSON"""
+    if payload.lstrip().startswith("{"):
+        try:
+            data = json.loads(payload)
+            if isinstance(data, dict):
+                return str(data.get(key, "")), data
+        except ValueError:
+            pass
+    return payload, {}
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +418,8 @@ def on_connect(client, userdata, flags, reason_code, properties):
         return
     log.info("MQTT connected to %s:%d", MQTT_HOST, MQTT_PORT)
     # 재접속 시에도 구독/discovery가 유지되도록 연결될 때마다 수행
-    client.subscribe([(t, 0) for t in (TOPIC_TV_ON, TOPIC_TV_OFF, TOPIC_TV_SWITCH_SET, TOPIC_PLAY, TOPIC_STOP)])
+    client.subscribe([(t, 0) for t in (TOPIC_TV_ON, TOPIC_TV_OFF, TOPIC_TV_SWITCH_SET, TOPIC_PLAY, TOPIC_STOP,
+                                       TOPIC_SOUND_PLAY, TOPIC_SOUND_SAY, TOPIC_SOUND_STOP)])
     publish_ha_discovery()
     client.publish(TOPIC_AVAILABILITY, "online", retain=True)
     if STATUS_INTERVAL > 0:
@@ -289,6 +438,14 @@ def handle_message(topic, payload):
         play_random()
     elif topic == TOPIC_STOP:
         player.stop()
+    elif topic == TOPIC_SOUND_PLAY:
+        name, opts = parse_sound_payload(payload, "file")
+        sounds.play(name.strip(), opts.get("volume"))
+    elif topic == TOPIC_SOUND_SAY:
+        text, opts = parse_sound_payload(payload, "text")
+        sounds.say(text, opts.get("lang"), opts.get("volume"))
+    elif topic == TOPIC_SOUND_STOP:
+        sounds.stop()
 
 
 def on_message(client, userdata, message):
@@ -333,7 +490,8 @@ def basename_filter(path):
 @app.route("/")
 def index():
     """웹 UI 메인 페이지"""
-    return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing)
+    return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing,
+                           sound_files=get_sound_files())
 
 
 @app.route("/update", methods=["POST"])
@@ -372,6 +530,24 @@ def stop_video():
     return result(True)
 
 
+@app.route("/sound/play", methods=["POST"])
+def sound_play():
+    data = request.get_json(silent=True) or {}
+    return result(sounds.play(str(data.get("file", "")), data.get("volume")))
+
+
+@app.route("/sound/say", methods=["POST"])
+def sound_say():
+    data = request.get_json(silent=True) or {}
+    return result(sounds.say(str(data.get("text", "")), data.get("lang"), data.get("volume")))
+
+
+@app.route("/sound/stop", methods=["POST"])
+def sound_stop():
+    sounds.stop()
+    return result(True)
+
+
 @app.route("/file_list")
 def file_list():
     """영상 파일 목록을 보여주는 페이지"""
@@ -399,6 +575,7 @@ def main():
     finally:
         stop_event.set()
         player.stop()
+        sounds.stop()
         try:
             client.publish(TOPIC_AVAILABILITY, "offline", retain=True).wait_for_publish(timeout=2)
         except (RuntimeError, ValueError):

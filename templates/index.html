@@ -104,6 +104,28 @@
         </a>
     </div>
 
+    <!-- 알림 소리 섹션 -->
+    <div class="section">
+        <h2>알림 소리</h2>
+        <div class="form-group">
+            <label for="sound-file">사운드 파일:</label>
+            <select id="sound-file">
+                {% for name in sound_files %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% else %}
+                <option value="">(sounds 폴더에 파일이 없습니다)</option>
+                {% endfor %}
+            </select>
+            <button class="btn" id="sound-play">소리 재생</button>
+        </div>
+        <div class="form-group">
+            <label for="tts-text">읽을 문장:</label>
+            <input type="text" id="tts-text" placeholder="예: 현관문이 열렸습니다">
+            <button class="btn" id="tts-say">음성 안내</button>
+        </div>
+        <button class="btn" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
+    </div>
+
     <div class="section">
         <h2>현재 상태</h2>
         <table>
@@ -154,6 +176,30 @@
             .catch(error => {
                 console.error("설정 업데이트 오류:", error);
             });
+        });
+
+        function postJson(url, body, failMessage) {
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(response => {
+                if (!response.ok) alert(failMessage);
+            })
+            .catch(error => {
+                console.error("요청 오류:", error);
+            });
+        }
+
+        document.getElementById('sound-play').addEventListener('click', function() {
+            postJson('/sound/play', { file: document.getElementById('sound-file').value },
+                     "사운드 파일을 재생하지 못했습니다.");
+        });
+
+        document.getElementById('tts-say').addEventListener('click', function() {
+            postJson('/sound/say', { text: document.getElementById('tts-text').value },
+                     "읽을 문장을 입력하세요.");
         });
 
         document.querySelectorAll('button[data-url]').forEach(function(button) {

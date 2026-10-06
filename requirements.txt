@@ -1,3 +1,4 @@
 flask>=3.0
 paho-mqtt>=2.0
 pyserial>=3.0  # libLGTV_serial
+gTTS>=2.3  # TTS (선택, 없으면 espeak-ng 사용)

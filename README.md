@@ -7,6 +7,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 
 - **랜덤 재생 / 정지**: NAS 폴더의 `.mp4`, `.mkv`, `.avi` 파일을 섞어서 재생목록을 만들고 재생합니다. 재생은 항상 하나만 유지됩니다.
 - **시계 표시**: 재생 중 화면 좌측 상단에 기기의 현재 시각(`HH:MM`)을 표시합니다.
+- **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
@@ -16,7 +17,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 ```bash
 git clone --recurse-submodules https://github.com/phoenix9469/MqttVLCPlayer.git
 cd MqttVLCPlayer
-sudo apt install vlc
+sudo apt install vlc espeak-ng   # espeak-ng: 오프라인 TTS(gTTS 실패 시 대체)
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -39,6 +40,10 @@ python3 -m venv .venv
 | `WEB_USERNAME` / `WEB_PASSWORD` | 없음 | 설정하면 웹 UI에 HTTP Basic 인증 적용 |
 | `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 VLC가 자동으로 결정 |
+| `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) |
+| `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
+| `TTS_ENGINE` | `gtts` | `gtts`(Google, 인터넷 필요, 음질 좋음) 또는 `espeak`(오프라인). `gtts` 실패 시 자동으로 `espeak-ng` 사용 |
+| `TTS_LANG` | `ko` | TTS 언어 |
 | `STATUS_INTERVAL` | `60` | TV 전원 상태 조회 주기(초), `0`이면 조회 안 함 |
 | `CONFIG_FILE` | `./config.json` | 웹 UI 설정 저장 위치 |
 | `PLAYLIST_PATH` | `./playlist.m3u8` | 생성되는 재생목록 위치 |
@@ -70,7 +75,51 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/lgtv/on`, `cvlc_tv/lgtv/off` | 구독 | TV 켜기 / 끄기 |
 | `cvlc_tv/lgtv/switch/set` | 구독 | `1` 켜기, `0` 끄기 |
 | `cvlc_tv/cvlc/play`, `cvlc_tv/cvlc/stop` | 구독 | 랜덤 재생 / 정지 |
+| `cvlc_tv/sound/play` | 구독 | 사운드 파일 재생. payload: `doorbell.mp3` 또는 `{"file": "doorbell.mp3", "volume": 80}` |
+| `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `현관문이 열렸습니다` 또는 `{"text": "...", "volume": 80, "lang": "ko"}` |
+| `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
+
+알림 소리는 요청된 순서대로 하나씩 재생됩니다. 그래서 `sound/play`로 차임을 보낸 뒤 `sound/say`로 안내 문장을 보내면 차례로 들립니다.
+`sound/play`는 `SOUNDS_FOLDER` 안의 파일만 재생합니다.
+
+## Home Assistant에서 알림 소리 사용
+
+`NOTIFY_CVLC_SOUND`(사운드 파일), `NOTIFY_CVLC_TTS`(음성 안내) notify 엔티티가 자동으로 등록됩니다(HA 2024.5 이상).
+엔티티 ID는 보통 `notify.video_control_server_notify_cvlc_sound`처럼 기기 이름이 앞에 붙습니다. 실제 ID는 HA의 엔티티 목록에서 확인하세요.
+
+```yaml
+automation:
+  - alias: "현관문 열림 알림"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.front_door
+        to: "on"
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.video_control_server_notify_cvlc_sound
+        data:
+          message: doorbell.mp3
+      - action: notify.send_message
+        target:
+          entity_id: notify.video_control_server_notify_cvlc_tts
+        data:
+          message: 현관문이 열렸습니다
+
+  - alias: "매일 아침 7시 안내"
+    triggers:
+      - trigger: time
+        at: "07:00:00"
+    actions:
+      - action: mqtt.publish
+        data:
+          topic: cvlc_tv/sound/say
+          payload: '{"text": "좋은 아침입니다. 오늘은 {{ now().strftime(''%m월 %d일'') }}입니다.", "volume": 70}'
+```
+
+영상과 알림 소리가 동시에 나려면 기기에서 PulseAudio 또는 PipeWire를 사용해야 합니다.
+ALSA 장치를 직접 사용하는 환경에서는 두 번째 소리가 재생되지 않을 수 있습니다.
 
 예약 재생이 필요하면 Home Assistant 자동화에서 위 토픽(또는 등록된 버튼)을 호출하세요.
