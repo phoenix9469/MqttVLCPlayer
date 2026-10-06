@@ -1,0 +1,18 @@
+[Unit]
+Description=MqttVLCPlayer (VLC + LG TV control over MQTT)
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user/MqttVLCPlayer
+EnvironmentFile=/etc/mqttvlcplayer.env
+# cvlc가 화면에 출력할 수 있도록 디스플레이 지정 (환경에 맞게 수정)
+Environment=DISPLAY=:0
+ExecStart=/home/user/MqttVLCPlayer/.venv/bin/python video_player.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

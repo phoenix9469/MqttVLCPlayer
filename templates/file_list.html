@@ -98,13 +98,17 @@
         <tbody>
             {% for video in video_files %}
             <tr>
-                <td>{{ video }}</td> <!-- 경로를 그대로 출력 -->
+                <td>{{ video | basename }}</td>
                 <td>
                     <form action="/play_video" method="post">
-                        <input type="hidden" name="video_path" value="{{ video }}">
+                        <input type="hidden" name="video" value="{{ video | basename }}">
                         <button type="submit">Play Now</button>
                     </form>
                 </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2">영상 파일이 없습니다. NAS 폴더 경로를 확인하세요.</td>
             </tr>
             {% endfor %}
         </tbody>

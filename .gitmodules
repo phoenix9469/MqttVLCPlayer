@@ -1,0 +1,3 @@
+[submodule "libLGTV_serial"]
+	path = libLGTV_serial
+	url = https://github.com/ehjortberg/libLGTV_serial.git

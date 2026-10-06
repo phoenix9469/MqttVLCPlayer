@@ -88,22 +88,6 @@
                 <label for="nas_folder">NAS 폴더 경로:</label>
                 <input type="text" id="nas_folder" name="nas_folder" value="{{ config['nas_folder'] }}" required>
             </div>
-            <div class="form-group">
-                <label for="time">영상 재생 시간:</label>
-                <input type="time" id="time" name="time" value="{{ config['time'] }}" required>
-            </div>
-            <div class="form-group">
-                <label>요일 선택:</label>
-                <div class="checkbox-group">
-                    <label><input type="checkbox" name="days" value="sun" {% if 'sun' in config['days'] %}checked{% endif %}> 일</label>
-                    <label><input type="checkbox" name="days" value="mon" {% if 'mon' in config['days'] %}checked{% endif %}> 월</label>
-                    <label><input type="checkbox" name="days" value="tue" {% if 'tue' in config['days'] %}checked{% endif %}> 화</label>
-                    <label><input type="checkbox" name="days" value="wed" {% if 'wed' in config['days'] %}checked{% endif %}> 수</label>
-                    <label><input type="checkbox" name="days" value="thu" {% if 'thu' in config['days'] %}checked{% endif %}> 목</label>
-                    <label><input type="checkbox" name="days" value="fri" {% if 'fri' in config['days'] %}checked{% endif %}> 금</label>
-                    <label><input type="checkbox" name="days" value="sat" {% if 'sat' in config['days'] %}checked{% endif %}> 토</label>
-                </div>
-            </div>
             <button type="submit" class="btn">설정 저장</button>
         </form>
     </div>
@@ -111,22 +95,21 @@
     <!-- 제어 섹션 -->
     <div class="section">
         <h2>제어</h2>
-        <button class="btn" id="play-now">랜덤 재생 시작</button>
-        <button class="btn" id="stop-video">영상 종료</button>
-        <button class="btn" id="on-tv">TV ON</button>
-        <button class="btn" id="off-tv">TV OFF</button>
+        <button class="btn" data-url="/play_now" data-ok="영상을 재생합니다." data-fail="재생할 영상이 없거나 재생에 실패했습니다.">랜덤 재생 시작</button>
+        <button class="btn" data-url="/stop_video" data-ok="영상이 종료되었습니다." data-fail="영상 종료에 실패했습니다.">영상 종료</button>
+        <button class="btn" data-url="/on_tv" data-ok="TV 전원이 켜졌습니다." data-fail="TV 전원을 켜지 못했습니다.">TV ON</button>
+        <button class="btn" data-url="/off_tv" data-ok="TV 전원이 꺼졌습니다." data-fail="TV 전원을 끄지 못했습니다.">TV OFF</button>
         <a href="{{ url_for('file_list') }}">
             <button class="btn">영상 목록 확인</button>
         </a>
     </div>
 
-    
     <div class="section">
-        <h2>현재 설정값</h2>
+        <h2>현재 상태</h2>
         <table>
             <thead>
                 <tr>
-                    <th>설정 항목</th>
+                    <th>항목</th>
                     <th>값</th>
                 </tr>
             </thead>
@@ -136,12 +119,12 @@
                     <td>{{ config['nas_folder'] }}</td>
                 </tr>
                 <tr>
-                    <td>영상 재생 시간</td>
-                    <td>{{ config['time'] }}</td>
+                    <td>TV 전원</td>
+                    <td>{% if tv_power is none %}알 수 없음{% elif tv_power %}켜짐{% else %}꺼짐{% endif %}</td>
                 </tr>
                 <tr>
-                    <td>요일 선택</td>
-                    <td>{{ config['days'] | join(', ') }}</td>
+                    <td>영상 재생</td>
+                    <td>{% if playing %}재생 중{% else %}정지{% endif %}</td>
                 </tr>
             </tbody>
         </table>
@@ -152,76 +135,37 @@
             event.preventDefault();
 
             const formData = new FormData(event.target);
-            const data = {
-                nas_folder: formData.get('nas_folder'),
-                time: formData.get('time'),
-                days: []
-            };
-
-            formData.getAll('days').forEach(function(day) {
-                data.days.push(day);
-            });
-
-            // 콘솔로 데이터 확인
-            console.log(JSON.stringify(data));
-
             fetch('/update', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(data) // JSON 형식으로 전송
+                body: JSON.stringify({ nas_folder: formData.get('nas_folder') })
             })
             .then(response => response.json())
             .then(data => {
-                alert("설정이 업데이트되었습니다.");
+                if (data.status === 'success') {
+                    alert("설정이 업데이트되었습니다.");
+                    location.reload();
+                } else {
+                    alert(data.message || "설정 업데이트에 실패했습니다.");
+                }
             })
             .catch(error => {
                 console.error("설정 업데이트 오류:", error);
             });
         });
 
-        document.getElementById('play-now').addEventListener('click', function() {
-            fetch('/play_now', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                alert("영상을 즉시 재생합니다.");
-            })
-            .catch(error => {
-                console.error("영상 재생 오류:", error);
-            });
-        });
-
-        document.getElementById('stop-video').addEventListener('click', function() {
-            fetch('/stop_video', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                alert("영상이 종료되었습니다.");
-            })
-            .catch(error => {
-                console.error("영상 종료 오류:", error);
-            });
-        });
-
-        document.getElementById('on-tv').addEventListener('click', function() {
-            fetch('/on_tv', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                alert("TV 전원이 켜졌습니다.");
-            })
-            .catch(error => {
-                console.error("TV 전원 오류:", error);
-            });
-        });
-
-        document.getElementById('off-tv').addEventListener('click', function() {
-            fetch('/off_tv', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                alert("TV 전원이 꺼졌습니다.");
-            })
-            .catch(error => {
-                console.error("TV 전원 오류:", error);
+        document.querySelectorAll('button[data-url]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                fetch(button.dataset.url, { method: 'POST' })
+                .then(response => {
+                    alert(response.ok ? button.dataset.ok : button.dataset.fail);
+                    location.reload();
+                })
+                .catch(error => {
+                    console.error("요청 오류:", error);
+                });
             });
         });
     </script>
