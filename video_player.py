@@ -16,7 +16,8 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 
 import tts
 from player import PLAYER_BACKEND, Player
-from sound import get_sound_files, parse_sound_payload, sounds, SOUND_VOLUME, SOUNDS_FOLDER
+import sound
+from sound import get_sound_files, parse_sound_payload, sounds, SOUNDS_FOLDER
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqttvlcplayer")
@@ -55,6 +56,11 @@ MPV_CACHE_SECS = int(os.environ.get("MPV_CACHE_SECS", "10"))
 MPV_AUDIO_FILTER = os.environ.get("MPV_AUDIO_FILTER", "dynaudnorm=f=150:g=5")
 MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
 MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
+# 재생 중인 mpv의 음량을 바꾸기 위한 IPC 소켓
+MPV_IPC_PATH = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(),
+                            f"mqttvlcplayer-mpv-{os.getuid()}.sock")
+# 영상 음량 기본값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 config.json에 저장
+VIDEO_VOLUME = int(os.environ.get("VIDEO_VOLUME", "100"))
 
 # VLC(VIDEO_PLAYER=vlc): 영상 재생 버퍼(ms)와 추가 옵션 (예: "--avcodec-hw=vaapi --vout=xcb_x11")
 VLC_CACHING = int(os.environ.get("VLC_CACHING", "3000"))
@@ -67,7 +73,8 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
 def mpv_video_args():
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
     args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
-            f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}"]
+            f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}",
+            "--volume-max=200", f"--input-ipc-server={MPV_IPC_PATH}"]
     if MPV_AUDIO_FILTER:
         args.append(f"--af={MPV_AUDIO_FILTER}")
     if CLOCK_FORMAT:
@@ -177,10 +184,36 @@ DISCOVERY = [
 app = Flask(__name__)
 
 # 웹 UI에서 바꿀 수 있는 설정 (config.json에 저장)
-config = {"nas_folder": os.environ.get("NAS_FOLDER", "/mv")}
+config = {
+    "nas_folder": os.environ.get("NAS_FOLDER", "/mv"),
+    "video_volume": VIDEO_VOLUME,
+    "sound_volume": sound.SOUND_VOLUME,
+}
 if os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, "r") as f:
         config.update({k: v for k, v in json.load(f).items() if k in config})
+config["sound_volume"] = sound.set_default_volume(config["sound_volume"])
+
+
+def save_config():
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f)
+
+
+def video_volume_args():
+    """영상 재생 시작 시 음량 옵션"""
+    volume = config["video_volume"]
+    if PLAYER_BACKEND == "mpv":
+        return [f"--volume={volume}"]
+    return [f"--gain={volume / 100:.2f}"]
+
+
+def set_video_volume(volume):
+    """영상 음량 저장, 재생 중인 mpv에는 바로 적용. 바로 적용됐는지 반환"""
+    config["video_volume"] = sound.clamp_volume(volume, config["video_volume"])
+    if PLAYER_BACKEND == "mpv":
+        return player.mpv_command(MPV_IPC_PATH, "set_property", "volume", config["video_volume"])
+    return False  # VLC는 다음 재생부터 적용
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +253,8 @@ def play_random():
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
     # mpv는 .m3u8을 스트림(HLS)으로 열 수 있어서 재생목록임을 명시한다
-    return player.play(f"--playlist={PLAYLIST_PATH}" if PLAYER_BACKEND == "mpv" else PLAYLIST_PATH)
+    return player.play(f"--playlist={PLAYLIST_PATH}" if PLAYER_BACKEND == "mpv" else PLAYLIST_PATH,
+                       video_volume_args())
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +410,8 @@ def basename_filter(path):
 def index():
     """웹 UI 메인 페이지"""
     return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing,
-                           sound_files=get_sound_files(), sounds_folder=SOUNDS_FOLDER, sound_volume=SOUND_VOLUME,
+                           sound_files=get_sound_files(), sounds_folder=SOUNDS_FOLDER, sound_volume=config["sound_volume"],
+                           video_volume=config["video_volume"],
                            tts_speed=tts.parse_speed(None), tts_voices=tts.PIPER_VOICES,
                            tts_voice=tts.PIPER_MODEL, tts_speaker=tts.PIPER_SPEAKER)
 
@@ -389,9 +424,22 @@ def update_config():
     if not os.path.isdir(nas_folder):
         return jsonify({"status": "error", "message": f"폴더를 찾을 수 없습니다: {nas_folder}"}), 400
     config["nas_folder"] = nas_folder
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f)
+    save_config()
     return jsonify({"status": "success", "config": config})
+
+
+@app.route("/volume", methods=["POST"])
+def update_volume():
+    """영상 음량(video), 알림 기본 음량(sound) 변경 (0~200). 지정한 것만 바꾼다"""
+    data = request.get_json(silent=True) or {}
+    applied = False
+    if "video" in data:
+        applied = set_video_volume(data["video"])
+    if "sound" in data:
+        config["sound_volume"] = sound.set_default_volume(data["sound"])
+    save_config()
+    return jsonify({"status": "success", "video": config["video_volume"],
+                    "sound": config["sound_volume"], "video_applied_now": applied})
 
 
 @app.route("/on_tv", methods=["POST"])
@@ -476,7 +524,7 @@ def play_video():
     videos = {os.path.basename(v): v for v in get_video_files()}
     if name not in videos:
         return "Unknown video", 400
-    player.play(videos[name])
+    player.play(videos[name], video_volume_args())
     return redirect(url_for("file_list"))
 
 

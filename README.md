@@ -9,6 +9,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **시계 표시**: 재생 중 화면 좌측 상단에 기기의 현재 시각(`HH:MM`)을 표시합니다.
 - **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
+- **음량 조절**: 웹 UI에서 영상 음량과 알림 음량을 따로 조절합니다. 영상 음량은 재생 중에도 바로 바뀝니다(mpv).
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
 
@@ -71,7 +72,8 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `VLC_CACHING` | `3000` | (`VIDEO_PLAYER=vlc`) 영상 재생 버퍼(ms) |
 | `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.flac`, `.m4a`, `.aac`). 웹 UI 알림 소리 섹션에 실제로 읽는 폴더가 표시됨 |
-| `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
+| `VIDEO_VOLUME` | `100` | 영상 음량 처음 값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
+| `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨 처음 값(0~200). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
 | `TTS_LANG` | `auto` | TTS 언어 `ja` 또는 `en`. `auto`면 가나·한자가 있을 때 `ja`, 아니면 `en` |
 | `TTS_SPEED` | `1.0` | 말하는 속도 배율(0.5~2.0). 모델의 기본 속도 기준으로 `1.2`는 20% 빠르게, `0.8`은 20% 느리게 |

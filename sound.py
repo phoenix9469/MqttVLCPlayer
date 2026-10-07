@@ -40,12 +40,27 @@ def get_sound_files():
     return sorted(f for f in names if f.lower().endswith(SOUND_EXTENSIONS))
 
 
-def parse_volume(volume):
-    """0~200 정수로 변환, 지정하지 않았거나 잘못된 값이면 기본 볼륨"""
+# 알림 기본 볼륨. 웹 UI에서 바꿀 수 있다 (set_default_volume)
+default_volume = SOUND_VOLUME
+
+
+def clamp_volume(volume, fallback):
+    """0~200 정수로 변환, 지정하지 않았거나 잘못된 값이면 fallback"""
     try:
         return max(0, min(int(volume), 200))
     except (TypeError, ValueError):
-        return SOUND_VOLUME
+        return fallback
+
+
+def parse_volume(volume):
+    """볼륨을 지정하지 않았거나 잘못된 값이면 알림 기본 볼륨"""
+    return clamp_volume(volume, default_volume)
+
+
+def set_default_volume(volume):
+    global default_volume
+    default_volume = clamp_volume(volume, default_volume)
+    return default_volume
 
 
 class SoundQueue:
