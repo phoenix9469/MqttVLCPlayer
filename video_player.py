@@ -50,6 +50,9 @@ CLOCK_FONT = os.environ.get("CLOCK_FONT", "")  # 글꼴 이름(fc-list로 확인
 # mpv: 하드웨어 디코딩 방식(auto-safe면 VA-API 등을 자동 선택, no면 CPU), 미리 읽어 둘 영상 길이(초), 추가 옵션
 MPV_HWDEC = os.environ.get("MPV_HWDEC", "auto-safe")
 MPV_CACHE_SECS = int(os.environ.get("MPV_CACHE_SECS", "10"))
+# 음량 평준화 필터. dynaudnorm 기본값(f=500:g=31)은 소리를 수 초 모아 두고 시작해서
+# 그동안 첫 화면이 멈춰 있으므로 짧게 줄여 쓴다. 비우면 필터 없음
+MPV_AUDIO_FILTER = os.environ.get("MPV_AUDIO_FILTER", "dynaudnorm=f=150:g=5")
 MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
 MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
 
@@ -64,8 +67,9 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
 def mpv_video_args():
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
     args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
-            f"--hwdec={MPV_HWDEC}", "--af=dynaudnorm",
-            "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}"]
+            f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}"]
+    if MPV_AUDIO_FILTER:
+        args.append(f"--af={MPV_AUDIO_FILTER}")
     if CLOCK_FORMAT:
         # %바이트수%값 형식으로 감싸야 형식 안의 %, 쉼표가 mpv 옵션 문법으로 해석되지 않는다
         def quote(value):

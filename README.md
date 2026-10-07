@@ -66,6 +66,7 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
 | `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
 | `MPV_CACHE_SECS` | `10` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
+| `MPV_AUDIO_FILTER` | `dynaudnorm=f=150:g=5` | 음량 평준화 필터. 값을 키우면(예: `dynaudnorm`) 더 부드럽지만 시작 시 소리를 모으느라 첫 화면이 수 초 멈춤. 비우면 필터 없음 |
 | `MPV_EXTRA_ARGS` | 없음 | 영상 재생에 추가할 mpv 옵션. 예: `--vo=gpu` |
 | `VLC_CACHING` | `3000` | (`VIDEO_PLAYER=vlc`) 영상 재생 버퍼(ms) |
 | `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
