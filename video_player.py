@@ -51,7 +51,12 @@ CLOCK_FONT = os.environ.get("CLOCK_FONT", "")  # 글꼴 이름(fc-list로 확인
 
 # mpv: 하드웨어 디코딩 방식(auto-safe면 VA-API 등을 자동 선택, no면 CPU), 미리 읽어 둘 영상 길이(초), 추가 옵션
 MPV_HWDEC = os.environ.get("MPV_HWDEC", "auto-safe")
-MPV_CACHE_SECS = int(os.environ.get("MPV_CACHE_SECS", "10"))
+# 네트워크(NAS)가 느릴 때 끊기지 않도록 미리 읽어 둘 영상 길이(초)와 최대 메모리(MB).
+# 고화질 영상은 초당 데이터가 많아서 MB 제한에 먼저 걸리므로 둘 다 넉넉하게 잡는다
+MPV_CACHE_SECS = int(os.environ.get("MPV_CACHE_SECS", "60"))
+MPV_CACHE_MB = int(os.environ.get("MPV_CACHE_MB", "500"))
+# 버퍼가 바닥나 멈췄을 때 이만큼(초) 다시 모은 뒤 재생 (짧으면 자주 끊기고, 길면 한 번에 오래 멈춤)
+MPV_CACHE_PAUSE_WAIT = float(os.environ.get("MPV_CACHE_PAUSE_WAIT", "5"))
 # 추가 오디오 필터 (예: dynaudnorm=f=150:g=5). 영상끼리의 음량 차이는 loudness.py가 영상별로 맞추므로 기본은 없음
 MPV_AUDIO_FILTER = os.environ.get("MPV_AUDIO_FILTER", "")
 MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
@@ -75,6 +80,7 @@ def mpv_video_args():
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
     args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
             f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}",
+            f"--demuxer-max-bytes={MPV_CACHE_MB}MiB", f"--cache-pause-wait={MPV_CACHE_PAUSE_WAIT}",
             "--volume-max=200", f"--input-ipc-server={MPV_IPC_PATH}"]
     if MPV_AUDIO_FILTER:
         args.append(f"--af={MPV_AUDIO_FILTER}")

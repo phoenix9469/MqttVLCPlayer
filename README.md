@@ -68,7 +68,10 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
 | `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
-| `MPV_CACHE_SECS` | `10` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
+| `MPV_CACHE_SECS` | `60` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
+| `MPV_CACHE_MB` | `500` | 미리 읽기에 쓸 최대 메모리(MB). 고화질 영상은 이 제한에 먼저 걸리므로 `MPV_CACHE_SECS`와 함께 늘림 |
+| `MPV_CACHE_PAUSE_WAIT` | `5` | 버퍼가 바닥나 멈췄을 때 다시 모을 시간(초) |
+| `LOUDNESS_READRATE` | `2` | 음량 측정 시 읽는 속도 제한(재생 속도의 배수). 재생과 NAS 대역폭을 다투지 않게 함 |
 | `MPV_AUDIO_FILTER` | 없음 | 추가 오디오 필터. 예: `dynaudnorm=f=150:g=5`(영상 안에서도 음량을 계속 평준화, 음악의 강약이 줄어듦) |
 | `LOUDNESS_TARGET` | `-18` | 영상별 음량 맞추기의 목표 음량(LUFS). `0`이면 끔. 전체적으로 작으면 웹 UI의 영상 음량을 올림 |
 | `LOUDNESS_MAX_BOOST` / `LOUDNESS_MAX_CUT` | `10` / `20` | 영상별 보정 최대치(dB). 키울 때는 소리가 찢어지지 않게 최고 음량을 제한 |

@@ -23,6 +23,9 @@ LOUDNESS_MAX_CUT = float(os.environ.get("LOUDNESS_MAX_CUT", "20"))
 LOUDNESS_CACHE = os.environ.get("LOUDNESS_CACHE", os.path.join(BASE_DIR, "loudness.json"))
 LOUDNESS_GAINS = os.environ.get("LOUDNESS_GAINS", os.path.join(BASE_DIR, "loudness-gains.json"))
 
+# 측정할 때 읽는 속도 제한 (재생 속도의 배수)
+LOUDNESS_READRATE = float(os.environ.get("LOUDNESS_READRATE", "2"))
+
 # 긴 영상은 전체를 읽지 않고 여러 구간만 측정 (NAS에서 큰 파일을 통째로 읽지 않도록)
 SAMPLE_COUNT = 5
 SAMPLE_SECONDS = 20
@@ -83,7 +86,8 @@ def _duration(path):
 
 def _measure_segment(path, start=None, length=None):
     """구간의 평균 음량(LUFS), 소리가 없거나 실패하면 None"""
-    cmd = ["nice", "-n", "19", "ffmpeg", "-nostdin", "-hide_banner", "-nostats"]
+    # -readrate: 재생 중인 영상과 NAS 대역폭을 다투지 않도록 실제 재생 속도의 LOUDNESS_READRATE배까지만 읽음
+    cmd = ["nice", "-n", "19", "ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-readrate", str(LOUDNESS_READRATE)]
     if start is not None:
         cmd += ["-ss", f"{start:.1f}", "-t", str(length)]
     cmd += ["-i", path, "-map", "0:a:0", "-vn", "-sn", "-dn",
