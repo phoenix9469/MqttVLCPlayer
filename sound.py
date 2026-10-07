@@ -6,6 +6,7 @@ import queue
 import shutil
 import tempfile
 import threading
+import time
 
 import tts
 from player import PLAYER_BACKEND, Player
@@ -17,6 +18,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 재생 가능한 사운드 파일 폴더, 기본 볼륨(0~200, 100이 원래 크기)
 SOUNDS_FOLDER = os.environ.get("SOUNDS_FOLDER", os.path.join(BASE_DIR, "sounds"))
 SOUND_VOLUME = int(os.environ.get("SOUND_VOLUME", "100"))
+# HDMI 스피커 등이 대기 상태에서 깨어나는 동안 앞부분이 잘리지 않도록 알림 앞에 넣을 무음(ms, mpv만).
+# 영상이 재생 중이거나 직전 알림이 끝난 지 SOUND_PREROLL_IDLE초가 안 지났으면 넣지 않는다
+SOUND_PREROLL_MS = int(os.environ.get("SOUND_PREROLL_MS", "1500"))
+SOUND_PREROLL_IDLE = float(os.environ.get("SOUND_PREROLL_IDLE", "10"))
 SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".oga", ".opus", ".flac", ".m4a", ".aac")
 if PLAYER_BACKEND == "mpv":
     SOUND_PLAYER_ARGS = ["mpv", "--no-video", "--no-terminal", "--volume-max=200"]
@@ -70,6 +75,8 @@ class SoundQueue:
         self._queue = queue.Queue()
         self._player = Player(SOUND_PLAYER_ARGS)
         self._generation = 0  # stop() 할 때마다 증가, 이전에 요청된 소리는 재생하지 않음
+        self._last_end = 0.0  # 마지막 알림이 끝난 시각 (time.monotonic)
+        self.output_active = lambda: False  # 소리 출력이 이미 깨어 있는지 (예: 영상 재생 중)
         threading.Thread(target=self._worker, daemon=True).start()
 
     def play(self, name, volume=None):
@@ -115,6 +122,14 @@ class SoundQueue:
             except Exception:
                 log.exception("Sound playback failed")
 
+    def _preroll_args(self):
+        if PLAYER_BACKEND != "mpv" or SOUND_PREROLL_MS <= 0:
+            return []
+        if self.output_active() or time.monotonic() - self._last_end < SOUND_PREROLL_IDLE:
+            return []
+        # 모든 채널 앞에 무음을 넣어 스피커가 깨어난 뒤 실제 소리가 나오게 한다
+        return [f"--af=lavfi=[adelay=delays={SOUND_PREROLL_MS}:all=1]"]
+
     def _play_item(self, generation, kind, target, volume):
         extra = volume_args(volume)
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,8 +140,9 @@ class SoundQueue:
             try:
                 # 음성 생성 중에 stop()된 경우 재생하지 않음
                 if target and generation == self._generation:
-                    self._player.play(target, extra)
+                    self._player.play(target, extra + self._preroll_args())
                     self._player.wait()
+                    self._last_end = time.monotonic()
             finally:
                 if kind == "temp":
                     shutil.rmtree(os.path.dirname(target), ignore_errors=True)

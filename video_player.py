@@ -246,6 +246,8 @@ def create_m3u8_playlist():
 
 
 player = Player(VIDEO_PLAYER_ARGS)
+# 영상이 재생 중이면 HDMI 소리 출력이 이미 깨어 있으므로 알림 앞 무음을 넣지 않는다
+sounds.output_active = lambda: player.playing
 
 
 def play_random():

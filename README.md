@@ -73,6 +73,8 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.flac`, `.m4a`, `.aac`). 웹 UI 알림 소리 섹션에 실제로 읽는 폴더가 표시됨 |
 | `VIDEO_VOLUME` | `100` | 영상 음량 처음 값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
+| `SOUND_PREROLL_MS` | `1500` | 알림 앞에 넣을 무음(ms). HDMI 스피커가 대기 상태에서 깨어나는 동안 앞부분이 잘리는 것을 막음. 영상 재생 중이거나 직전 알림 직후에는 넣지 않음. `0`이면 끔(mpv만) |
+| `SOUND_PREROLL_IDLE` | `10` | 직전 알림이 끝나고 이 시간(초)이 지난 뒤에만 무음을 넣음 |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨 처음 값(0~200). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
 | `TTS_LANG` | `auto` | TTS 언어 `ja` 또는 `en`. `auto`면 가나·한자가 있을 때 `ja`, 아니면 `en` |
