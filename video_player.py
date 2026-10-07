@@ -45,6 +45,7 @@ STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 # 재생 화면 좌측 상단에 표시할 시계 (strftime 형식, 빈 값이면 표시 안 함)
 CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
 CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 화면 크기에 맞춰 자동 결정
+CLOCK_FONT = os.environ.get("CLOCK_FONT", "")  # 글꼴 이름(fc-list로 확인), 비우면 기본 글꼴 (mpv만 적용)
 
 # mpv: 하드웨어 디코딩 방식(auto-safe면 VA-API 등을 자동 선택, no면 CPU), 미리 읽어 둘 영상 길이(초), 추가 옵션
 MPV_HWDEC = os.environ.get("MPV_HWDEC", "auto-safe")
@@ -67,9 +68,12 @@ def mpv_video_args():
             "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}"]
     if CLOCK_FORMAT:
         # %바이트수%값 형식으로 감싸야 형식 안의 %, 쉼표가 mpv 옵션 문법으로 해석되지 않는다
-        quoted = f"%{len(CLOCK_FORMAT.encode())}%{CLOCK_FORMAT}"
-        args += [f"--script={MPV_CLOCK_SCRIPT}",
-                 f"--script-opts=clock-format={quoted},clock-size={CLOCK_SIZE}"]
+        def quote(value):
+            return f"%{len(value.encode())}%{value}"
+        script_opts = f"clock-format={quote(CLOCK_FORMAT)},clock-size={CLOCK_SIZE}"
+        if CLOCK_FONT:
+            script_opts += f",clock-font={quote(CLOCK_FONT)}"
+        args += [f"--script={MPV_CLOCK_SCRIPT}", f"--script-opts={script_opts}"]
     return args + MPV_EXTRA_ARGS
 
 

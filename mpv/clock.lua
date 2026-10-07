@@ -1,10 +1,12 @@
 -- 재생 화면 좌측 상단에 기기의 현재 시각을 표시하는 mpv 스크립트
--- 옵션: --script-opts=clock-format=%H:%M,clock-size=0 (size는 px, 0이면 화면 높이의 5%)
+-- 옵션: --script-opts=clock-format=%H:%M,clock-size=0,clock-font=Noto Sans
+--       (size는 px, 0이면 화면 높이의 5%. font가 비어 있으면 mpv 기본 OSD 글꼴)
 local options = require "mp.options"
 
 local opts = {
     format = "%H:%M",
     size = 0,
+    font = "",
     x = 30,
     y = 20,
 }
@@ -25,8 +27,9 @@ local function update()
     overlay.res_x = width
     overlay.res_y = height
     local size = opts.size > 0 and opts.size or math.floor(height * 0.05)
-    overlay.data = string.format("{\\an7\\pos(%d,%d)\\fs%d\\bord2\\shad0\\1c&HFFFFFF&\\3c&H000000&}%s",
-        opts.x, opts.y, size, ass_escape(os.date(opts.format)))
+    local font = opts.font ~= "" and ("\\fn" .. opts.font) or ""
+    overlay.data = string.format("{\\an7\\pos(%d,%d)%s\\fs%d\\bord2\\shad0\\1c&HFFFFFF&\\3c&H000000&}%s",
+        opts.x, opts.y, font, size, ass_escape(os.date(opts.format)))
     overlay:update()
 end
 

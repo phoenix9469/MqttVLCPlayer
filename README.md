@@ -61,6 +61,7 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `WEB_USERNAME` / `WEB_PASSWORD` | 없음 | 설정하면 웹 UI에 HTTP Basic 인증 적용 |
 | `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 화면 높이에 맞춰 자동으로 결정 |
+| `CLOCK_FONT` | 없음 | 시계 글꼴 이름(`fc-list : family`로 확인). 비우면 mpv 기본 글꼴 |
 | `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
 | `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
