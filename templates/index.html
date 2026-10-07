@@ -75,6 +75,11 @@
             text-align: left;
             border-top: 1px solid #ddd;
         }
+        .hint {
+            color: #666;
+            font-size: 13px;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -114,11 +119,12 @@
                 {% for name in sound_files %}
                 <option value="{{ name }}">{{ name }}</option>
                 {% else %}
-                <option value="">(sounds 폴더에 파일이 없습니다)</option>
+                <option value="">(재생할 수 있는 파일이 없습니다)</option>
                 {% endfor %}
             </select>
             <button class="btn" id="sound-play">소리 재생</button>
         </div>
+        <p class="hint">폴더: {{ sounds_folder }}{% if not sound_files %} — 이 폴더에 .mp3, .wav, .ogg, .opus, .flac, .m4a, .aac 파일을 넣으세요{% endif %}</p>
         <button class="btn" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
     </div>
 

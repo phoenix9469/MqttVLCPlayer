@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 재생 가능한 사운드 파일 폴더, 기본 볼륨(0~200, 100이 원래 크기)
 SOUNDS_FOLDER = os.environ.get("SOUNDS_FOLDER", os.path.join(BASE_DIR, "sounds"))
 SOUND_VOLUME = int(os.environ.get("SOUND_VOLUME", "100"))
-SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".flac", ".m4a")
+SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".oga", ".opus", ".flac", ".m4a", ".aac")
 if PLAYER_BACKEND == "mpv":
     SOUND_PLAYER_ARGS = ["mpv", "--no-video", "--no-terminal", "--volume-max=200"]
 else:
@@ -34,7 +34,8 @@ def volume_args(volume):
 def get_sound_files():
     try:
         names = os.listdir(SOUNDS_FOLDER)
-    except OSError:
+    except OSError as e:
+        log.warning("Cannot read SOUNDS_FOLDER %r: %s", SOUNDS_FOLDER, e)
         return []
     return sorted(f for f in names if f.lower().endswith(SOUND_EXTENSIONS))
 

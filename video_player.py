@@ -16,7 +16,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 
 import tts
 from player import PLAYER_BACKEND, Player
-from sound import get_sound_files, parse_sound_payload, sounds, SOUND_VOLUME
+from sound import get_sound_files, parse_sound_payload, sounds, SOUND_VOLUME, SOUNDS_FOLDER
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqttvlcplayer")
@@ -376,7 +376,7 @@ def basename_filter(path):
 def index():
     """웹 UI 메인 페이지"""
     return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing,
-                           sound_files=get_sound_files(), sound_volume=SOUND_VOLUME,
+                           sound_files=get_sound_files(), sounds_folder=SOUNDS_FOLDER, sound_volume=SOUND_VOLUME,
                            tts_speed=tts.parse_speed(None), tts_voices=tts.PIPER_VOICES,
                            tts_voice=tts.PIPER_MODEL, tts_speaker=tts.PIPER_SPEAKER)
 
