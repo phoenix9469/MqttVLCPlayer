@@ -1,13 +1,20 @@
-"""cvlc 프로세스 실행/종료 (영상 재생과 알림 소리가 함께 사용)"""
+"""재생기(mpv 또는 cvlc) 프로세스 실행/종료 (영상 재생과 알림 소리가 함께 사용)"""
 import logging
+import os
 import subprocess
 import threading
 
 log = logging.getLogger("mqttvlcplayer")
 
+# 사용할 재생기: mpv(기본, 하드웨어 디코딩이 잘 됨) 또는 vlc
+PLAYER_BACKEND = os.environ.get("VIDEO_PLAYER", "mpv").strip().lower()
+if PLAYER_BACKEND not in ("mpv", "vlc"):
+    log.warning("Unknown VIDEO_PLAYER %r, using mpv", PLAYER_BACKEND)
+    PLAYER_BACKEND = "mpv"
+
 
 class Player:
-    """cvlc 프로세스를 하나만 유지하는 플레이어"""
+    """재생기 프로세스를 하나만 유지하는 플레이어"""
 
     def __init__(self, args):
         self._args = args
@@ -32,7 +39,7 @@ class Player:
             try:
                 self._process = subprocess.Popen(self._args + list(extra_args) + [target])
             except OSError as e:
-                log.error("Failed to start cvlc: %s", e)
+                log.error("Failed to start %s: %s", self._args[0], e)
                 return False
             log.info("Playing %s", target)
             return True

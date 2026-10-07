@@ -1,4 +1,4 @@
-"""알림 소리: 사운드 파일과 TTS 음성을 요청 순서대로 재생 (영상과 별도의 cvlc로 동시에 재생)"""
+"""알림 소리: 사운드 파일과 TTS 음성을 요청 순서대로 재생 (영상과 별도의 재생기 프로세스로 동시에 재생)"""
 import json
 import logging
 import os
@@ -8,7 +8,7 @@ import tempfile
 import threading
 
 import tts
-from player import Player
+from player import PLAYER_BACKEND, Player
 
 log = logging.getLogger("mqttvlcplayer")
 
@@ -18,7 +18,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUNDS_FOLDER = os.environ.get("SOUNDS_FOLDER", os.path.join(BASE_DIR, "sounds"))
 SOUND_VOLUME = int(os.environ.get("SOUND_VOLUME", "100"))
 SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".flac", ".m4a")
-SOUND_CVLC_ARGS = ["cvlc", "--play-and-exit", "--no-video"]
+if PLAYER_BACKEND == "mpv":
+    SOUND_PLAYER_ARGS = ["mpv", "--no-video", "--no-terminal", "--volume-max=200"]
+else:
+    SOUND_PLAYER_ARGS = ["cvlc", "--play-and-exit", "--no-video"]
+
+
+def volume_args(volume):
+    """볼륨(0~200, 100이 원래 크기)을 재생기 옵션으로 변환"""
+    if PLAYER_BACKEND == "mpv":
+        return [f"--volume={volume}"]
+    return [f"--gain={volume / 100:.2f}"]
 
 
 def get_sound_files():
@@ -42,7 +52,7 @@ class SoundQueue:
 
     def __init__(self):
         self._queue = queue.Queue()
-        self._player = Player(SOUND_CVLC_ARGS)
+        self._player = Player(SOUND_PLAYER_ARGS)
         self._generation = 0  # stop() 할 때마다 증가, 이전에 요청된 소리는 재생하지 않음
         threading.Thread(target=self._worker, daemon=True).start()
 
@@ -90,7 +100,7 @@ class SoundQueue:
                 log.exception("Sound playback failed")
 
     def _play_item(self, generation, kind, target, volume):
-        extra = [f"--gain={volume / 100:.2f}"]
+        extra = volume_args(volume)
         with tempfile.TemporaryDirectory() as tmp:
             if kind == "tts":
                 text, lang, options = target

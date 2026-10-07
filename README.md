@@ -1,6 +1,6 @@
 # MqttVLCPlayer
 
-NAS 폴더의 영상을 VLC(`cvlc`)로 무작위 전체화면 재생하고, LG TV 전원을 RS-232 시리얼로 제어하는 서버입니다.
+NAS 폴더의 영상을 mpv(하드웨어 디코딩)로 무작위 전체화면 재생하고, LG TV 전원을 RS-232 시리얼로 제어하는 서버입니다.
 Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 
 ## 기능
@@ -19,7 +19,8 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 | `video_player.py` | 실행 진입점. 영상 재생, LG TV 제어, MQTT(Home Assistant), 웹 UI |
 | `sound.py` | 알림 소리 대기열. 사운드 파일과 TTS 음성을 요청 순서대로 재생 |
 | `tts.py` | TTS 엔진(piper-plus, espeak-ng). 문장을 WAV 파일로 생성 |
-| `player.py` | cvlc 프로세스 실행/종료 (영상과 알림 소리가 함께 사용) |
+| `player.py` | 재생기(mpv 또는 cvlc) 프로세스 실행/종료 (영상과 알림 소리가 함께 사용) |
+| `mpv/clock.lua` | mpv 재생 화면 좌측 상단 시계 표시 스크립트 |
 | `templates/` | 웹 UI 화면 |
 | `libLGTV_serial/` | LG TV RS-232 제어 라이브러리 (서브모듈) |
 
@@ -28,7 +29,8 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 ```bash
 git clone --recurse-submodules https://github.com/phoenix9469/MqttVLCPlayer.git
 cd MqttVLCPlayer
-sudo apt install vlc espeak-ng   # espeak-ng: piper-plus를 쓸 수 없을 때 대체 TTS
+sudo apt install mpv espeak-ng   # espeak-ng: piper-plus를 쓸 수 없을 때 대체 TTS
+# VIDEO_PLAYER=vlc로 VLC를 쓸 때만: sudo apt install vlc
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -58,9 +60,14 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `5000` | 웹 UI 주소 |
 | `WEB_USERNAME` / `WEB_PASSWORD` | 없음 | 설정하면 웹 UI에 HTTP Basic 인증 적용 |
 | `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
-| `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 VLC가 자동으로 결정 |
-| `VLC_CACHING` | `3000` | 영상 재생 버퍼(ms). NAS에서 읽다가 끊기면 늘림 (VLC 기본값 1000) |
-| `VLC_EXTRA_ARGS` | 없음 | 영상 재생에 추가할 VLC 옵션. 예: `--avcodec-hw=vaapi`. 어떤 옵션이 좋은지는 `bash deploy/vlc-benchmark.sh <영상 파일>`로 비교 |
+| `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 화면 높이에 맞춰 자동으로 결정 |
+| `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
+| `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
+| `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
+| `MPV_CACHE_SECS` | `10` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
+| `MPV_EXTRA_ARGS` | 없음 | 영상 재생에 추가할 mpv 옵션. 예: `--vo=gpu` |
+| `VLC_CACHING` | `3000` | (`VIDEO_PLAYER=vlc`) 영상 재생 버퍼(ms) |
+| `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`) |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨(0~200, 100이 원래 크기) |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |

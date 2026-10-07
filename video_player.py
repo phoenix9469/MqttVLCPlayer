@@ -15,7 +15,7 @@ import paho.mqtt.client as mqtt
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
 
 import tts
-from player import Player
+from player import PLAYER_BACKEND, Player
 from sound import get_sound_files, parse_sound_payload, sounds, SOUND_VOLUME
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -44,23 +44,47 @@ STATUS_INTERVAL = int(os.environ.get("STATUS_INTERVAL", "60"))
 
 # 재생 화면 좌측 상단에 표시할 시계 (strftime 형식, 빈 값이면 표시 안 함)
 CLOCK_FORMAT = os.environ.get("CLOCK_FORMAT", "%H:%M")
-CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 VLC가 화면에 맞춰 자동 결정
+CLOCK_SIZE = int(os.environ.get("CLOCK_SIZE", "0"))  # 글자 크기(px), 0이면 화면 크기에 맞춰 자동 결정
 
-# 영상 재생 버퍼(ms). NAS에서 읽을 때 끊기면 늘린다 (VLC 기본값은 1000ms)
+# mpv: 하드웨어 디코딩 방식(auto-safe면 VA-API 등을 자동 선택, no면 CPU), 미리 읽어 둘 영상 길이(초), 추가 옵션
+MPV_HWDEC = os.environ.get("MPV_HWDEC", "auto-safe")
+MPV_CACHE_SECS = int(os.environ.get("MPV_CACHE_SECS", "10"))
+MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
+MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
+
+# VLC(VIDEO_PLAYER=vlc): 영상 재생 버퍼(ms)와 추가 옵션 (예: "--avcodec-hw=vaapi --vout=xcb_x11")
 VLC_CACHING = int(os.environ.get("VLC_CACHING", "3000"))
-# 영상 재생에 추가할 VLC 옵션 (예: "--avcodec-hw=vaapi --vout=xcb_x11")
 VLC_EXTRA_ARGS = shlex.split(os.environ.get("VLC_EXTRA_ARGS", ""))
 
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
-CVLC_ARGS = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
-if CLOCK_FORMAT:
-    # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
-    CVLC_ARGS += ["--sub-source=marq", f"--marq-marquee={CLOCK_FORMAT}", "--marq-position=5",
-                  "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
-    if CLOCK_SIZE > 0:
-        CVLC_ARGS.append(f"--marq-size={CLOCK_SIZE}")
-CVLC_ARGS += [f"--file-caching={VLC_CACHING}", f"--network-caching={VLC_CACHING}"] + VLC_EXTRA_ARGS
+
+
+def mpv_video_args():
+    # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
+    args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
+            f"--hwdec={MPV_HWDEC}", "--af=dynaudnorm",
+            "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}"]
+    if CLOCK_FORMAT:
+        # %바이트수%값 형식으로 감싸야 형식 안의 %, 쉼표가 mpv 옵션 문법으로 해석되지 않는다
+        quoted = f"%{len(CLOCK_FORMAT.encode())}%{CLOCK_FORMAT}"
+        args += [f"--script={MPV_CLOCK_SCRIPT}",
+                 f"--script-opts=clock-format={quoted},clock-size={CLOCK_SIZE}"]
+    return args + MPV_EXTRA_ARGS
+
+
+def vlc_video_args():
+    args = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
+    if CLOCK_FORMAT:
+        # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
+        args += ["--sub-source=marq", f"--marq-marquee={CLOCK_FORMAT}", "--marq-position=5",
+                 "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
+        if CLOCK_SIZE > 0:
+            args.append(f"--marq-size={CLOCK_SIZE}")
+    return args + [f"--file-caching={VLC_CACHING}", f"--network-caching={VLC_CACHING}"] + VLC_EXTRA_ARGS
+
+
+VIDEO_PLAYER_ARGS = mpv_video_args() if PLAYER_BACKEND == "mpv" else vlc_video_args()
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
@@ -180,14 +204,15 @@ def create_m3u8_playlist():
     return len(video_files)
 
 
-player = Player(CVLC_ARGS)
+player = Player(VIDEO_PLAYER_ARGS)
 
 
 def play_random():
     if create_m3u8_playlist() == 0:
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
-    return player.play(PLAYLIST_PATH)
+    # mpv는 .m3u8을 스트림(HLS)으로 열 수 있어서 재생목록임을 명시한다
+    return player.play(f"--playlist={PLAYLIST_PATH}" if PLAYER_BACKEND == "mpv" else PLAYLIST_PATH)
 
 
 # ---------------------------------------------------------------------------
