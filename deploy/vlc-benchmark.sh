@@ -29,7 +29,7 @@ i=0
 for entry in "${CONFIGS[@]}"; do
     name="${entry%%|*}"; opts="${entry#*|}"; log="$LOG_DIR/$i.log"; i=$((i + 1))
     # shellcheck disable=SC2086
-    cvlc -v --fullscreen --no-osd --play-and-exit --run-time="$SECONDS_PER_RUN" $opts "$FILE" > "$log" 2>&1 &
+    cvlc -vv --fullscreen --no-osd --play-and-exit --run-time="$SECONDS_PER_RUN" $opts "$FILE" > "$log" 2>&1 &
     pid=$!
     sleep 3   # 시작 직후(파일 열기, 초기화)는 빼고 측정
     t0=$(cpu_ticks $pid); s0=$(date +%s.%N); t1=""; s1=""
@@ -41,12 +41,17 @@ for entry in "${CONFIGS[@]}"; do
     done
     wait $pid 2>/dev/null
     cpu=$(awk -v a="$t0" -v b="$t1" -v s="$s0" -v e="$s1" -v hz="$TICKS" 'BEGIN { d = e - s; if (a == "" || b == "" || d <= 0 || b < a) print "-"; else printf "%.0f", (b - a) / hz / d * 100 }')
-    if grep -qiE "for hardware decoding|Using .*va-?api|vaapi.*(direct|copy)" "$log"; then hw="사용"; else hw="안 씀"; fi
+    # VLC는 하드웨어 디코더를 쓰면 'using hw decoder module', 실패하면 'no hw decoder modules matched'를 남김
+    if grep -qiE "using hw decoder module|for hardware decoding" "$log"; then hw="사용"; else hw="안 씀"; fi
     late=$(grep -ciE "too late|picture might be displayed late|dropp" "$log")
     # 화면 출력을 만들지 못하면 CPU가 낮게 나와도 의미가 없음
     if grep -qiE "video output creation failed|failed to create video output" "$log"; then out="실패"; else out="OK"; fi
     printf "%-20s %8s  %-8s %-10s %s\n" "$name" "$cpu" "$out" "$hw" "$late"
 done
+echo
+echo "하드웨어 디코딩 관련 메시지 (VA-API 설정, 2.log):"
+grep -iE "hw decoder module|hardware decod|vaInitialize|libva error|vaapi.*(error|fail)|not supported|could not" "$LOG_DIR/2.log" \
+    | grep -vE "libva info|available hardware decoder output" | sort -u | head -15 | sed 's/^/  /'
 echo
 echo "로그: $LOG_DIR (설정 순서대로 0.log, 1.log ...)"
 echo "화면이 OK이고, CPU가 낮고, 늦은/버린 프레임이 적은 설정을 VLC_EXTRA_ARGS에 넣으세요."
