@@ -110,6 +110,7 @@
         <button class="btn" data-url="/stop_video" data-ok="영상이 종료되었습니다." data-fail="영상 종료에 실패했습니다.">영상 종료</button>
         <button class="btn" data-url="/on_tv" data-ok="TV 전원이 켜졌습니다." data-fail="TV 전원을 켜지 못했습니다.">TV ON</button>
         <button class="btn" data-url="/off_tv" data-ok="TV 전원이 꺼졌습니다." data-fail="TV 전원을 끄지 못했습니다.">TV OFF</button>
+        <button class="btn" id="restart-app">앱 재시작</button>
         <a href="{{ url_for('file_list') }}">
             <button class="btn">영상 목록 확인</button>
         </a>
@@ -315,6 +316,24 @@
 
         document.getElementById('tts-device').addEventListener('click', () => ttsTest('device'));
         document.getElementById('tts-browser').addEventListener('click', () => ttsTest('browser'));
+
+        // 앱 재시작: 서버가 다시 뜰 때까지 기다렸다가 새로고침
+        document.getElementById('restart-app').addEventListener('click', function() {
+            if (!confirm("앱을 재시작할까요? 재생 중인 영상과 알림이 멈춥니다.")) return;
+            const button = this;
+            button.disabled = true;
+            button.textContent = "재시작 중...";
+            fetch('/restart', { method: 'POST' }).catch(() => {});
+            let tries = 0;
+            setTimeout(function poll() {
+                fetch('/', { cache: 'no-store' })
+                .then(response => { if (response.ok) location.reload(); else throw new Error(); })
+                .catch(() => {
+                    if (++tries < 60) setTimeout(poll, 1000);
+                    else { alert("앱이 다시 시작되지 않았습니다. 앱 터미널을 확인하세요."); location.reload(); }
+                });
+            }, 4000);
+        });
 
         document.querySelectorAll('button[data-url]').forEach(function(button) {
             button.addEventListener('click', function() {

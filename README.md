@@ -10,6 +10,8 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **음량 조절**: 웹 UI에서 영상 음량과 알림 음량을 따로 조절합니다. 영상 음량은 재생 중에도 바로 바뀝니다(mpv).
+- **영상별 음량 맞추기**: 영상마다 평균 음량을 한 번 측정해 두고(`loudness.json`), 재생할 때 영상 전체에 같은 보정값을 적용합니다. 영상 안의 강약은 그대로 두고 영상끼리의 음량 차이만 줄입니다(mpv). 아직 측정하지 않은 영상은 보정 없이 재생됩니다.
+- **앱 재시작**: 웹 UI의 "앱 재시작" 버튼. `start.sh`로 실행 중이면 환경변수 파일도 다시 읽습니다.
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
 
@@ -67,11 +69,13 @@ piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
 | `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
 | `MPV_CACHE_SECS` | `10` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
-| `MPV_AUDIO_FILTER` | `dynaudnorm=f=150:g=5` | 음량 평준화 필터. 값을 키우면(예: `dynaudnorm`) 더 부드럽지만 시작 시 소리를 모으느라 첫 화면이 수 초 멈춤. 비우면 필터 없음 |
+| `MPV_AUDIO_FILTER` | 없음 | 추가 오디오 필터. 예: `dynaudnorm=f=150:g=5`(영상 안에서도 음량을 계속 평준화, 음악의 강약이 줄어듦) |
+| `LOUDNESS_TARGET` | `-18` | 영상별 음량 맞추기의 목표 음량(LUFS). `0`이면 끔. 전체적으로 작으면 웹 UI의 영상 음량을 올림 |
+| `LOUDNESS_MAX_BOOST` / `LOUDNESS_MAX_CUT` | `10` / `20` | 영상별 보정 최대치(dB). 키울 때는 소리가 찢어지지 않게 최고 음량을 제한 |
 | `MPV_EXTRA_ARGS` | 없음 | 영상 재생에 추가할 mpv 옵션. 예: `--vo=gpu` |
 | `VLC_CACHING` | `3000` | (`VIDEO_PLAYER=vlc`) 영상 재생 버퍼(ms) |
 | `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
-| `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.flac`, `.m4a`, `.aac`). 웹 UI 알림 소리 섹션에 실제로 읽는 폴더가 표시됨 |
+| `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.flac`, `.m4a`, `.aac`). 웹 UI 알림 소리 섹션에 실제로 읽는 폴더가 표시됨. 저장소 밖 폴더(예: `~/sounds`)를 권장 |
 | `VIDEO_VOLUME` | `100` | 영상 음량 처음 값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
 | `SOUND_PREROLL_MS` | `1500` | 알림 앞에 넣을 무음(ms). HDMI 스피커가 대기 상태에서 깨어나는 동안 앞부분이 잘리는 것을 막음. 영상 재생 중이거나 직전 알림 직후에는 넣지 않음. `0`이면 끔(mpv만) |
 | `SOUND_PREROLL_IDLE` | `10` | 직전 알림이 끝나고 이 시간(초)이 지난 뒤에만 무음을 넣음 |

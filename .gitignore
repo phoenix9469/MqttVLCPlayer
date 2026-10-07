@@ -6,3 +6,9 @@ playlist.m3u8
 mqttvlcplayer.env
 .vscode/
 piper-models/
+loudness.json
+loudness-gains.json
+*.tmp
+# 사용자가 넣는 알림 소리 파일은 저장소에 포함하지 않는다 (git clean -fd, 변경 취소에도 지워지지 않게)
+sounds/*
+!sounds/.gitkeep

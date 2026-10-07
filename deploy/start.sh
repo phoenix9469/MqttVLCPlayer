@@ -25,8 +25,14 @@ PYTHON="$APP_DIR/.venv/bin/python"
 while true; do
     echo "[$(date '+%F %T')] MqttVLCPlayer 시작 ($APP_DIR, 설정: $ENV_FILE)"
     # 매번 새 하위 셸에서 설정을 읽어서, 파일에서 지운 변수가 남지 않고 바뀐 값이 반영됨
-    ( load_env; exec "$PYTHON" video_player.py )
+    ( load_env; export MQTTVLCPLAYER_SUPERVISED=1; exec "$PYTHON" video_player.py )
     code=$?
+    if [ "$code" -eq 75 ]; then
+        # 웹 UI의 재시작 버튼
+        echo "[$(date '+%F %T')] 재시작 요청. 설정을 다시 읽고 시작합니다."
+        sleep 1
+        continue
+    fi
     echo "[$(date '+%F %T')] MqttVLCPlayer 종료 (코드 $code). 5초 후 설정을 다시 읽고 시작합니다. 완전히 멈추려면 지금 Ctrl+C"
     sleep 5
 done
