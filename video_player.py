@@ -78,7 +78,9 @@ VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
 
 def mpv_video_args():
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
+    # --sid=no·--sub-auto=no: 영상에 들어 있거나 옆에 있는 자막은 표시하지 않음 (시계는 OSD라 영향 없음)
     args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
+            "--sid=no", "--sub-auto=no",
             f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}",
             f"--demuxer-max-bytes={MPV_CACHE_MB}MiB", f"--cache-pause-wait={MPV_CACHE_PAUSE_WAIT}",
             "--volume-max=200", f"--input-ipc-server={MPV_IPC_PATH}"]
