@@ -1,0 +1,332 @@
+/* 웹 UI 공통 스타일: 휴대폰은 한 줄, PC는 카드 여러 열 */
+:root {
+    --bg: #f2f4f7;
+    --card: #ffffff;
+    --text: #1d2433;
+    --muted: #667085;
+    --line: #e3e7ee;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #11151c;
+        --card: #1a202b;
+        --text: #e6e9ef;
+        --muted: #98a2b3;
+        --line: #2c3442;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    accent-color: var(--primary);  /* 슬라이더·체크박스 색 */
+    margin: 0;
+    padding: 12px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+}
+
+header {
+    max-width: 1200px;
+    margin: 0 auto 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+h2 {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+}
+
+/* 카드 배치: 화면 폭에 따라 1~3열 */
+main {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    min-width: 0;
+}
+
+/* 넓은 화면에서 두 칸을 차지하는 카드 */
+@media (min-width: 700px) {
+    .card.wide {
+        grid-column: span 2;
+    }
+}
+
+/* 상태 표시 */
+.status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    font-size: 0.9rem;
+}
+
+.chip .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.chip .dot.on {
+    background: var(--ok);
+}
+
+/* 버튼 */
+.btn, button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;  /* 손가락으로 누르기 쉬운 크기 */
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 1rem;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn:hover, button:hover {
+    background: var(--primary-hover);
+}
+
+.btn:disabled, button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.btn.secondary {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+}
+
+.btn.danger {
+    background: var(--danger);
+}
+
+/* 버튼 묶음: 폭에 맞춰 자동으로 여러 칸 */
+.actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* 입력 */
+.form-group {
+    margin-bottom: 12px;
+}
+
+.form-group > label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+input[type=text], input[type=number], select, textarea {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font-size: 16px;  /* 휴대폰에서 입력할 때 화면이 확대되지 않게 */
+    font-family: inherit;
+}
+
+textarea {
+    resize: vertical;
+}
+
+/* 여러 입력을 한 줄에: 좁으면 자동으로 줄바꿈 */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.row > .field {
+    flex: 1 1 120px;
+    min-width: 0;
+}
+
+.row > .field.narrow {
+    flex: 0 1 100px;
+}
+
+.field > label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+}
+
+.check input {
+    width: 20px;
+    height: 20px;
+}
+
+/* 음량 슬라이더 */
+.slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.slider input[type=range] {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+}
+
+.slider output, .slider span {
+    width: 3em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+details {
+    margin-top: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+}
+
+summary {
+    cursor: pointer;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    color: var(--primary);
+}
+
+.hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    word-break: break-all;
+}
+
+code {
+    word-break: break-all;
+}
+
+/* 다운로드 목록 */
+.jobs {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+}
+
+.jobs li {
+    border-top: 1px solid var(--line);
+    padding: 10px 0;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.jobs .info {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+}
+
+.jobs progress {
+    width: 100%;
+}
+
+.jobs button {
+    min-height: 36px;
+    padding: 4px 10px;
+    background: var(--danger);
+}
+
+audio {
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* 영상 목록 페이지 */
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line);
+}
+
+.list li:first-child {
+    border-top: none;
+}
+
+.list .name {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+}
+
+.list form {
+    margin: 0;
+}
+
+#filter {
+    margin-bottom: 8px;
+}

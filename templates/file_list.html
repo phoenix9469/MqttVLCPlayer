@@ -1,117 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video List</title>
-    <style>
-        /* 전체 페이지 스타일 */
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-        }
-
-        /* 제목 스타일 */
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-top: 20px;
-        }
-
-        /* 표 스타일 */
-        table {
-            width: 80%;
-            margin: 20px auto;
-            border-collapse: collapse;
-            background-color: #fff;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        /* 표 헤더 스타일 */
-        th {
-            background-color: #007bff;
-            color: #fff;
-            padding: 12px 15px;
-            text-align: left;
-        }
-
-        /* 표 본문 스타일 */
-        td {
-            padding: 12px 15px;
-            text-align: left;
-            border-top: 1px solid #ddd;
-        }
-
-        /* 버튼 스타일 */
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-        }
-
-        /* 버튼 hover 효과 */
-        button:hover {
-            background-color: #0056b3;
-        }
-        
-        .back-btn {
-            background-color: #007bff; /* 버튼 색 */
-            color: white;
-            padding: 10px 20px;
-            text-decoration: none;
-            border-radius: 5px;
-            display: inline-block;
-            margin-bottom: 20px;
-        }
-        .back-btn:hover {
-            background-color: #0056b3; /* hover 시 색 */
-        }
-
-        /* 테이블을 중앙에 정렬 */
-        tbody tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        
-        tbody tr:hover {
-            background-color: #f1f1f1;
-        }
-
-    </style>
+    <meta name="color-scheme" content="light dark">
+    <title>영상 목록</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <a href="{{ url_for('index') }}" class="back-btn">Back to Home</a> <!-- 뒤로가기 버튼 추가 -->
-    <h1>Video Files</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>File Name</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
+
+<header>
+    <h1>영상 목록 <span class="hint">({{ video_files | length }}개)</span></h1>
+    <a class="btn secondary" href="{{ url_for('index') }}">← 처음으로</a>
+</header>
+
+<main>
+    <section class="card wide">
+        {% if video_files %}
+        <input type="text" id="filter" placeholder="이름으로 찾기">
+        <ul class="list" id="videos">
             {% for video in video_files %}
-            <tr>
-                <td>{{ video | basename }}</td>
-                <td>
-                    <form action="/play_video" method="post">
-                        <input type="hidden" name="video" value="{{ video | basename }}">
-                        <button type="submit">Play Now</button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="2">영상 파일이 없습니다. NAS 폴더 경로를 확인하세요.</td>
-            </tr>
+            <li>
+                <span class="name">{{ video | basename }}</span>
+                <form action="/play_video" method="post">
+                    <input type="hidden" name="video" value="{{ video | basename }}">
+                    <button type="submit">재생</button>
+                </form>
+            </li>
             {% endfor %}
-        </tbody>
-    </table>
+        </ul>
+        {% else %}
+        <p>영상 파일이 없습니다. 설정에서 영상(NAS) 폴더 경로를 확인하세요.</p>
+        {% endif %}
+    </section>
+</main>
+
+<script>
+    // 입력한 글자가 들어간 영상만 보이기
+    const filter = document.getElementById('filter');
+    if (filter) {
+        filter.addEventListener('input', function() {
+            const query = filter.value.trim().toLowerCase();
+            document.querySelectorAll('#videos li').forEach(item => {
+                item.hidden = query && !item.textContent.toLowerCase().includes(query);
+            });
+        });
+    }
+</script>
 </body>
 </html>

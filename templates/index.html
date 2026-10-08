@@ -3,238 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>영상 재생 및 설정</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            box-sizing: border-box;
-            margin: 0;
-            background-color: #f8f9fa;
-        }
-        h1 {
-            text-align: center;
-        }
-        h2 {
-            text-align: center;
-        }
-        .section {
-            margin-bottom: 30px;
-            width: 100%;
-            max-width: 600px;
-        }
-        .btn {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-            margin-right: 10px;
-            width: 100%;
-            max-width: 200px;
-            margin-bottom: 10px;
-        }
-        .btn:hover {
-            background-color: #0056b3;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        #tts-text {
-            width: 100%;
-            box-sizing: border-box;
-            font-size: 16px;
-        }
-        #tts-volume, #tts-speed, #tts-speaker {
-            width: 70px;
-        }
-        table {
-            width: 100%;
-            max-width: 600px;
-            margin: 20px auto;
-            border-collapse: collapse;
-            background-color: #fff;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        /* 표 헤더 스타일 */
-        th {
-            background-color: #007bff;
-            color: #fff;
-            padding: 12px 15px;
-            text-align: left;
-        }
-
-        /* 표 본문 스타일 */
-        td {
-            padding: 12px 15px;
-            text-align: left;
-            border-top: 1px solid #ddd;
-        }
-        input.volume {
-            width: 200px;
-            vertical-align: middle;
-        }
-
-        #dl-url, .dl-settings input[type=text] {
-            width: 100%;
-            box-sizing: border-box;
-            font-size: 16px;
-        }
-        .dl-settings .form-group label {
-            display: inline-block;
-            min-width: 110px;
-        }
-        #dl-jobs td {
-            padding: 8px;
-            font-size: 14px;
-            word-break: break-all;
-        }
-        #dl-jobs progress {
-            width: 100%;
-        }
-
-        .hint {
-            color: #666;
-            font-size: 13px;
-            word-break: break-all;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
+<header>
     <h1>영상 재생 및 설정</h1>
-
-    <!-- 설정 섹션 -->
-    <div class="section">
-        <h2>설정</h2>
-        <form id="config-form">
-            <div class="form-group">
-                <label for="nas_folder">NAS 폴더 경로:</label>
-                <input type="text" id="nas_folder" name="nas_folder" value="{{ config['nas_folder'] }}" required>
-            </div>
-            <button type="submit" class="btn">설정 저장</button>
-        </form>
+    <div class="status">
+        <span class="chip"><span class="dot {% if tv_power %}on{% endif %}"></span>TV {% if tv_power is none %}알 수 없음{% elif tv_power %}켜짐{% else %}꺼짐{% endif %}</span>
+        <span class="chip"><span class="dot {% if playing %}on{% endif %}"></span>영상 {% if playing %}재생 중{% else %}정지{% endif %}</span>
     </div>
+</header>
 
-    <!-- 제어 섹션 -->
-    <div class="section">
+<main>
+    <!-- 제어 -->
+    <section class="card">
         <h2>제어</h2>
-        <button class="btn" data-url="/play_now" data-ok="영상을 재생합니다." data-fail="재생할 영상이 없거나 재생에 실패했습니다.">랜덤 재생 시작</button>
-        <button class="btn" data-url="/stop_video" data-ok="영상이 종료되었습니다." data-fail="영상 종료에 실패했습니다.">영상 종료</button>
-        <button class="btn" data-url="/on_tv" data-ok="TV 전원이 켜졌습니다." data-fail="TV 전원을 켜지 못했습니다.">TV ON</button>
-        <button class="btn" data-url="/off_tv" data-ok="TV 전원이 꺼졌습니다." data-fail="TV 전원을 끄지 못했습니다.">TV OFF</button>
-        <button class="btn" id="restart-app">앱 재시작</button>
-        <a href="{{ url_for('file_list') }}">
-            <button class="btn">영상 목록 확인</button>
-        </a>
-    </div>
-
-    <!-- 영상 다운로드 섹션 -->
-    <div class="section">
-        <h2>영상 다운로드</h2>
-        {% if ytdlp_version %}
-        <div class="form-group">
-            <input type="text" id="dl-url" placeholder="유튜브 등 영상 링크 (https://...)">
+        <div class="actions">
+            <button class="btn" data-url="/play_now" data-ok="영상을 재생합니다." data-fail="재생할 영상이 없거나 재생에 실패했습니다.">랜덤 재생</button>
+            <button class="btn" data-url="/stop_video" data-ok="영상이 종료되었습니다." data-fail="영상 종료에 실패했습니다.">영상 종료</button>
+            <button class="btn" data-url="/on_tv" data-ok="TV 전원이 켜졌습니다." data-fail="TV 전원을 켜지 못했습니다.">TV ON</button>
+            <button class="btn" data-url="/off_tv" data-ok="TV 전원이 꺼졌습니다." data-fail="TV 전원을 끄지 못했습니다.">TV OFF</button>
+            <a class="btn secondary" href="{{ url_for('file_list') }}">영상 목록</a>
+            <button class="btn secondary" id="restart-app">앱 재시작</button>
         </div>
-        <div class="form-group">
-            <label for="dl-quality">화질:</label>
-            <select id="dl-quality">
-                <option value="">설정값 사용</option>
-                {% if "best" in ytdlp_qualities %}<option value="best">최고 화질</option>{% endif %}
-                {% if "2160" in ytdlp_qualities %}<option value="2160">2160p (4K)</option>{% endif %}
-                {% if "1440" in ytdlp_qualities %}<option value="1440">1440p</option>{% endif %}
-                {% if "1080" in ytdlp_qualities %}<option value="1080">1080p</option>{% endif %}
-                {% if "720" in ytdlp_qualities %}<option value="720">720p</option>{% endif %}
-                {% if "480" in ytdlp_qualities %}<option value="480">480p</option>{% endif %}
-                {% if "audio" in ytdlp_qualities %}<option value="audio">음성만 (m4a)</option>{% endif %}
-            </select>
-        </div>
-        <button class="btn" id="dl-start">다운로드</button>
-        <table id="dl-jobs" hidden>
-            <thead><tr><th>영상</th><th>상태</th><th></th></tr></thead>
-            <tbody></tbody>
-        </table>
+    </section>
 
-        <details class="dl-settings">
-            <summary>다운로드 설정</summary>
-            <div class="form-group">
-                <label for="dl-folder">저장 폴더:</label>
-                <input type="text" id="dl-folder" value="{{ ytdlp.folder }}" placeholder="비우면 영상 폴더 ({{ config.nas_folder }})">
-            </div>
-            <div class="form-group">
-                <label for="dl-default-quality">기본 화질:</label>
-                <select id="dl-default-quality">
-                    <option value="best" {% if ytdlp.quality == "best" %}selected{% endif %}>최고 화질</option>
-                    <option value="2160" {% if ytdlp.quality == "2160" %}selected{% endif %}>2160p (4K)</option>
-                    <option value="1440" {% if ytdlp.quality == "1440" %}selected{% endif %}>1440p</option>
-                    <option value="1080" {% if ytdlp.quality == "1080" %}selected{% endif %}>1080p</option>
-                    <option value="720" {% if ytdlp.quality == "720" %}selected{% endif %}>720p</option>
-                    <option value="480" {% if ytdlp.quality == "480" %}selected{% endif %}>480p</option>
-                    <option value="audio" {% if ytdlp.quality == "audio" %}selected{% endif %}>음성만 (m4a)</option>
-                </select>
-                <label for="dl-container">파일 형식:</label>
-                <select id="dl-container">
-                    {% for c in ytdlp_containers %}<option value="{{ c }}" {% if ytdlp.container == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-                </select>
-            </div>
-            <div class="form-group">
-                <label><input type="checkbox" id="dl-h264" {% if ytdlp.prefer_h264 %}checked{% endif %}> H.264 우선 (이 노트북에서 하드웨어 디코딩 가능)</label><br>
-                <label><input type="checkbox" id="dl-playlist" {% if ytdlp.playlist %}checked{% endif %}> 재생목록 링크면 전체 받기</label><br>
-                <label><input type="checkbox" id="dl-metadata" {% if ytdlp.embed_metadata %}checked{% endif %}> 제목·설명 등 정보 기록</label><br>
-                <label><input type="checkbox" id="dl-thumbnail" {% if ytdlp.embed_thumbnail %}checked{% endif %}> 썸네일 넣기</label>
-            </div>
-            <div class="form-group">
-                <label for="dl-filename">파일 이름:</label>
-                <input type="text" id="dl-filename" value="{{ ytdlp.filename }}">
-                <span class="hint">yt-dlp 출력 템플릿. 예: %(uploader)s - %(title)s.%(ext)s</span>
-            </div>
-            <div class="form-group">
-                <label for="dl-rate">속도 제한:</label>
-                <input type="text" id="dl-rate" value="{{ ytdlp.rate_limit }}" placeholder="예: 5M (초당 5MB), 비우면 제한 없음">
-            </div>
-            <div class="form-group">
-                <label for="dl-cookies">쿠키 파일:</label>
-                <input type="text" id="dl-cookies" value="{{ ytdlp.cookies }}" placeholder="로그인·연령 제한 영상용 cookies.txt 경로 (선택)">
-            </div>
-            <div class="form-group">
-                <label for="dl-extra">추가 옵션(JSON):</label>
-                <input type="text" id="dl-extra" value="{{ ytdlp.extra }}" placeholder='예: {"concurrent_fragment_downloads": 4}'>
-            </div>
-            <button class="btn" id="dl-save">설정 저장</button>
-            <button class="btn" id="dl-update">yt-dlp 업데이트</button>
-            <p class="hint">yt-dlp {{ ytdlp_version }}. 유튜브 다운로드가 갑자기 실패하면 업데이트 후 앱을 재시작하세요.</p>
-        </details>
-        {% else %}
-        <p class="hint">yt-dlp가 설치되어 있지 않습니다. <code>.venv/bin/pip install "yt-dlp[default]"</code> 후 앱을 재시작하세요.</p>
-        {% endif %}
-    </div>
-
-    <!-- 음량 섹션 -->
-    <div class="section">
+    <!-- 음량 -->
+    <section class="card">
         <h2>음량</h2>
         <div class="form-group">
-            <label for="video-volume">영상 음량:</label>
-            <input type="range" class="volume" id="video-volume" data-key="video" min="0" max="200" step="5" value="{{ video_volume }}">
-            <span id="video-volume-value">{{ video_volume }}</span>
+            <label for="video-volume">영상 음량</label>
+            <div class="slider">
+                <input type="range" class="volume" id="video-volume" data-key="video" min="0" max="200" step="5" value="{{ video_volume }}">
+                <span id="video-volume-value">{{ video_volume }}</span>
+            </div>
         </div>
         <div class="form-group">
-            <label for="sound-volume">알림 음량:</label>
-            <input type="range" class="volume" id="sound-volume" data-key="sound" min="0" max="200" step="5" value="{{ sound_volume }}">
-            <span id="sound-volume-value">{{ sound_volume }}</span>
+            <label for="sound-volume">알림 음량</label>
+            <div class="slider">
+                <input type="range" class="volume" id="sound-volume" data-key="sound" min="0" max="200" step="5" value="{{ sound_volume }}">
+                <span id="sound-volume-value">{{ sound_volume }}</span>
+            </div>
         </div>
         <p class="hint">100이 원래 크기(최대 200). 영상 음량은 재생 중에도 바로 바뀌고, 알림 음량은 볼륨을 따로 지정하지 않은 알림에 적용됩니다.</p>
-    </div>
+    </section>
 
-    <!-- 알림 소리 섹션 -->
-    <div class="section">
+    <!-- 알림 소리 -->
+    <section class="card">
         <h2>알림 소리</h2>
         <div class="form-group">
-            <label for="sound-file">사운드 파일:</label>
+            <label for="sound-file">사운드 파일</label>
             <select id="sound-file">
                 {% for name in sound_files %}
                 <option value="{{ name }}">{{ name }}</option>
@@ -242,70 +63,164 @@
                 <option value="">(재생할 수 있는 파일이 없습니다)</option>
                 {% endfor %}
             </select>
+        </div>
+        <div class="actions">
             <button class="btn" id="sound-play">소리 재생</button>
+            <button class="btn secondary" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
         </div>
         <p class="hint">폴더: {{ sounds_folder }}{% if not sound_files %} — 이 폴더에 .mp3, .wav, .ogg, .opus, .flac, .m4a, .aac 파일을 넣으세요{% endif %}</p>
-        <button class="btn" data-url="/sound/stop" data-ok="알림 소리를 멈췄습니다." data-fail="알림 소리를 멈추지 못했습니다.">소리 멈춤</button>
-    </div>
+    </section>
 
-    <!-- TTS 테스트 섹션 -->
-    <div class="section">
+    <!-- 영상 다운로드 -->
+    <section class="card wide">
+        <h2>영상 다운로드</h2>
+        {% if ytdlp_version %}
+        <div class="row">
+            <div class="field" style="flex-basis: 260px">
+                <label for="dl-url">링크</label>
+                <input type="text" id="dl-url" inputmode="url" placeholder="유튜브 등 영상 링크 (https://...)">
+            </div>
+            <div class="field narrow" style="flex-basis: 140px">
+                <label for="dl-quality">화질</label>
+                <select id="dl-quality">
+                    <option value="">설정값</option>
+                    {% if "best" in ytdlp_qualities %}<option value="best">최고 화질</option>{% endif %}
+                    {% if "2160" in ytdlp_qualities %}<option value="2160">2160p (4K)</option>{% endif %}
+                    {% if "1440" in ytdlp_qualities %}<option value="1440">1440p</option>{% endif %}
+                    {% if "1080" in ytdlp_qualities %}<option value="1080">1080p</option>{% endif %}
+                    {% if "720" in ytdlp_qualities %}<option value="720">720p</option>{% endif %}
+                    {% if "480" in ytdlp_qualities %}<option value="480">480p</option>{% endif %}
+                    {% if "audio" in ytdlp_qualities %}<option value="audio">음성만 (m4a)</option>{% endif %}
+                </select>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn" id="dl-start">다운로드</button>
+        </div>
+        <ul class="jobs" id="dl-jobs" hidden></ul>
+
+        <details class="dl-settings">
+            <summary>다운로드 설정</summary>
+            <div class="form-group">
+                <label for="dl-folder">저장 폴더</label>
+                <input type="text" id="dl-folder" value="{{ ytdlp.folder }}" placeholder="비우면 영상 폴더 ({{ config.nas_folder }})">
+            </div>
+            <div class="row form-group">
+                <div class="field">
+                    <label for="dl-default-quality">기본 화질</label>
+                    <select id="dl-default-quality">
+                        <option value="best" {% if ytdlp.quality == "best" %}selected{% endif %}>최고 화질</option>
+                        <option value="2160" {% if ytdlp.quality == "2160" %}selected{% endif %}>2160p (4K)</option>
+                        <option value="1440" {% if ytdlp.quality == "1440" %}selected{% endif %}>1440p</option>
+                        <option value="1080" {% if ytdlp.quality == "1080" %}selected{% endif %}>1080p</option>
+                        <option value="720" {% if ytdlp.quality == "720" %}selected{% endif %}>720p</option>
+                        <option value="480" {% if ytdlp.quality == "480" %}selected{% endif %}>480p</option>
+                        <option value="audio" {% if ytdlp.quality == "audio" %}selected{% endif %}>음성만 (m4a)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="dl-container">파일 형식</label>
+                    <select id="dl-container">
+                        {% for c in ytdlp_containers %}<option value="{{ c }}" {% if ytdlp.container == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="dl-rate">속도 제한</label>
+                    <input type="text" id="dl-rate" value="{{ ytdlp.rate_limit }}" placeholder="예: 5M">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="check"><input type="checkbox" id="dl-h264" {% if ytdlp.prefer_h264 %}checked{% endif %}> H.264 우선 (이 노트북에서 하드웨어 디코딩 가능)</label>
+                <label class="check"><input type="checkbox" id="dl-playlist" {% if ytdlp.playlist %}checked{% endif %}> 재생목록 링크면 전체 받기</label>
+                <label class="check"><input type="checkbox" id="dl-metadata" {% if ytdlp.embed_metadata %}checked{% endif %}> 제목·설명 등 정보 기록</label>
+                <label class="check"><input type="checkbox" id="dl-thumbnail" {% if ytdlp.embed_thumbnail %}checked{% endif %}> 썸네일 넣기</label>
+            </div>
+            <div class="form-group">
+                <label for="dl-filename">파일 이름</label>
+                <input type="text" id="dl-filename" value="{{ ytdlp.filename }}">
+                <span class="hint">yt-dlp 출력 템플릿. 예: %(uploader)s - %(title)s.%(ext)s</span>
+            </div>
+            <div class="form-group">
+                <label for="dl-cookies">쿠키 파일 (선택)</label>
+                <input type="text" id="dl-cookies" value="{{ ytdlp.cookies }}" placeholder="로그인·연령 제한 영상용 cookies.txt 경로">
+            </div>
+            <div class="form-group">
+                <label for="dl-extra">추가 옵션 (JSON)</label>
+                <input type="text" id="dl-extra" value="{{ ytdlp.extra }}" placeholder='예: {"concurrent_fragment_downloads": 4}'>
+            </div>
+            <div class="actions">
+                <button class="btn" id="dl-save">설정 저장</button>
+                <button class="btn secondary" id="dl-update">yt-dlp 업데이트</button>
+            </div>
+            <p class="hint">yt-dlp {{ ytdlp_version }}. 유튜브 다운로드가 갑자기 실패하면 업데이트 후 앱을 재시작하세요.</p>
+        </details>
+        {% else %}
+        <p class="hint">yt-dlp가 설치되어 있지 않습니다. <code>.venv/bin/pip install "yt-dlp[default]"</code> 후 앱을 재시작하세요.</p>
+        {% endif %}
+    </section>
+
+    <!-- TTS 테스트 -->
+    <section class="card">
         <h2>TTS 테스트</h2>
         <div class="form-group">
-            <label for="tts-text">읽을 문장:</label>
+            <label for="tts-text">읽을 문장</label>
             <textarea id="tts-text" rows="3" placeholder="例: 玄関のドアが開きました。 / The front door is open."></textarea>
         </div>
-        <div class="form-group">
-            <label for="tts-lang">언어:</label>
-            <select id="tts-lang">
-                <option value="auto">자동</option>
-                <option value="ja">日本語</option>
-                <option value="en">English</option>
-            </select>
-            <label for="tts-volume">볼륨:</label>
-            <input type="number" id="tts-volume" min="0" max="200" value="{{ sound_volume }}">
-            <label for="tts-voice">목소리:</label>
-            <select id="tts-voice">
-                {% for name in tts_voices %}
-                <option value="{{ name }}" {% if name == tts_voice %}selected{% endif %}>{{ name }}</option>
-                {% endfor %}
-            </select>
-            <label for="tts-speaker">화자:</label>
-            <input type="number" id="tts-speaker" min="0" step="1" value="{{ tts_speaker }}">
-            <label for="tts-speed">속도:</label>
-            <input type="number" id="tts-speed" min="0.5" max="2" step="0.1" value="{{ tts_speed }}">
+        <div class="row form-group">
+            <div class="field">
+                <label for="tts-lang">언어</label>
+                <select id="tts-lang">
+                    <option value="auto">자동</option>
+                    <option value="ja">日本語</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+            <div class="field" style="flex-basis: 200px">
+                <label for="tts-voice">목소리</label>
+                <select id="tts-voice">
+                    {% for name in tts_voices %}
+                    <option value="{{ name }}" {% if name == tts_voice %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
-        <button class="btn" id="tts-device">기기 스피커로 재생</button>
-        <button class="btn" id="tts-browser">브라우저에서 듣기</button>
-        <p id="tts-status"></p>
+        <div class="row form-group">
+            <div class="field narrow">
+                <label for="tts-volume">볼륨</label>
+                <input type="number" id="tts-volume" min="0" max="200" value="{{ sound_volume }}">
+            </div>
+            <div class="field narrow">
+                <label for="tts-speaker">화자</label>
+                <input type="number" id="tts-speaker" min="0" step="1" value="{{ tts_speaker }}">
+            </div>
+            <div class="field narrow">
+                <label for="tts-speed">속도</label>
+                <input type="number" id="tts-speed" min="0.5" max="2" step="0.1" value="{{ tts_speed }}">
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn" id="tts-device">스피커로 재생</button>
+            <button class="btn secondary" id="tts-browser">브라우저로 듣기</button>
+        </div>
+        <p id="tts-status" class="hint"></p>
         <audio id="tts-audio" controls hidden></audio>
-    </div>
+    </section>
 
-    <div class="section">
-        <h2>현재 상태</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>항목</th>
-                    <th>값</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>NAS 폴더 경로</td>
-                    <td>{{ config['nas_folder'] }}</td>
-                </tr>
-                <tr>
-                    <td>TV 전원</td>
-                    <td>{% if tv_power is none %}알 수 없음{% elif tv_power %}켜짐{% else %}꺼짐{% endif %}</td>
-                </tr>
-                <tr>
-                    <td>영상 재생</td>
-                    <td>{% if playing %}재생 중{% else %}정지{% endif %}</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+    <!-- 설정 -->
+    <section class="card">
+        <h2>설정</h2>
+        <form id="config-form">
+            <div class="form-group">
+                <label for="nas_folder">영상(NAS) 폴더</label>
+                <input type="text" id="nas_folder" name="nas_folder" value="{{ config['nas_folder'] }}" required>
+            </div>
+            <div class="actions">
+                <button type="submit" class="btn">설정 저장</button>
+            </div>
+        </form>
+    </section>
+</main>
+
     <!-- 설정 업데이트 및 제어 요청 -->
     <script>
         document.getElementById('config-form').addEventListener('submit', function(event) {
@@ -357,27 +272,26 @@
         let dlTimer = null;
         function refreshDownloads() {
             fetch('/ytdlp/jobs').then(r => r.json()).then(data => {
-                const table = document.getElementById('dl-jobs');
-                if (!table) return;
-                const body = table.querySelector('tbody');
-                body.innerHTML = '';
+                const list = document.getElementById('dl-jobs');
+                if (!list) return;
+                list.innerHTML = '';
                 let active = false;
                 data.jobs.forEach(job => {
                     const running = !['완료', '실패', '취소'].includes(job.status);
                     active = active || running;
                     let state = escapeHtml(job.status);
                     if (job.status === '다운로드 중') {
-                        state += `<br><progress max="100" value="${job.progress}"></progress> ${job.progress}% ${escapeHtml(job.speed)} ${escapeHtml(job.eta)}`;
+                        state += ` ${job.progress}% ${escapeHtml(job.speed)} ${escapeHtml(job.eta)}<br><progress max="100" value="${job.progress}"></progress>`;
                     }
                     if (job.error) state += `<br><span class="hint">${escapeHtml(job.error)}</span>`;
                     if (job.file) state += `<br><span class="hint">${escapeHtml(job.file)}</span>`;
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td>${escapeHtml(job.title || job.url)}</td><td>${state}</td>` +
-                        `<td>${running ? `<button data-cancel="${job.id}">취소</button>` : ''}</td>`;
-                    body.appendChild(row);
+                    const item = document.createElement('li');
+                    item.innerHTML = `<div class="info"><strong>${escapeHtml(job.title || job.url)}</strong><br>${state}</div>` +
+                        (running ? `<button data-cancel="${job.id}">취소</button>` : '');
+                    list.appendChild(item);
                 });
-                table.hidden = data.jobs.length === 0;
-                body.querySelectorAll('button[data-cancel]').forEach(button => {
+                list.hidden = data.jobs.length === 0;
+                list.querySelectorAll('button[data-cancel]').forEach(button => {
                     button.addEventListener('click', () => {
                         fetch('/ytdlp/cancel/' + button.dataset.cancel, { method: 'POST' }).then(refreshDownloads);
                     });
