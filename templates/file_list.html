@@ -14,8 +14,8 @@
     <a class="btn secondary" href="{{ url_for('index') }}">← 처음으로</a>
 </header>
 
-<main>
-    <section class="card wide">
+<main class="single">
+    <section class="card">
         {% if video_files %}
         <input type="text" id="filter" placeholder="이름으로 찾기">
         <ul class="list" id="videos">

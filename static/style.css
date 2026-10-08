@@ -59,14 +59,12 @@ h2 {
     font-size: 1.1rem;
 }
 
-/* 카드 배치: 화면 폭에 따라 1~3열 */
+/* 카드 배치: 화면 폭에 따라 1~3열. 신문 단처럼 위에서부터 채워서 카드 사이에 빈칸이 생기지 않게 */
 main {
     max-width: 1200px;
     margin: 0 auto;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 12px;
-    align-items: start;
+    columns: 3 340px;
+    column-gap: 12px;
 }
 
 .card {
@@ -74,14 +72,9 @@ main {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 16px;
+    margin: 0 0 12px;
     min-width: 0;
-}
-
-/* 넓은 화면에서 두 칸을 차지하는 카드 */
-@media (min-width: 700px) {
-    .card.wide {
-        grid-column: span 2;
-    }
+    break-inside: avoid;  /* 카드가 두 열에 걸쳐 잘리지 않게 */
 }
 
 /* 상태 표시 */
@@ -329,4 +322,9 @@ audio {
 
 #filter {
     margin-bottom: 8px;
+}
+
+/* 카드가 하나뿐인 페이지(영상 목록)는 한 열로 넓게 */
+main.single {
+    columns: auto;
 }
