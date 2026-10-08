@@ -8,6 +8,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **랜덤 재생 / 정지**: NAS 폴더의 `.mp4`, `.mkv`, `.avi` 파일을 섞어서 재생목록을 만들고 재생합니다. 재생은 항상 하나만 유지됩니다.
 - **시계 표시**: 재생 중 화면 좌측 상단에 기기의 현재 시각(`HH:MM`)을 표시합니다.
 - **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
+- **화면 알림창**: 화면 오른쪽 위에 디스코드 임베드 모양의 반투명 알림창(제목, 내용, 색 띠, 필드, 바닥글)을 띄웁니다. 영상 재생 중이면 영상 위에, 아니면 검은 화면을 띄워서 표시하고 알림이 사라지면 닫습니다(mpv).
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **음량 조절**: 웹 UI에서 영상 음량과 알림 음량을 따로 조절합니다. 영상 음량은 재생 중에도 바로 바뀝니다(mpv).
 - **영상별 음량 맞추기**: 영상마다 평균 음량을 한 번 측정해 두고(`loudness.json`), 재생할 때 영상 전체에 같은 보정값을 적용합니다. 영상 안의 강약은 그대로 두고 영상끼리의 음량 차이만 줄입니다(mpv). 아직 측정하지 않은 영상은 보정 없이 재생됩니다.
@@ -25,6 +26,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 | `tts.py` | TTS 엔진(piper-plus, espeak-ng). 문장을 WAV 파일로 생성 |
 | `player.py` | 재생기(mpv 또는 cvlc) 프로세스 실행/종료 (영상과 알림 소리가 함께 사용) |
 | `mpv/clock.lua` | mpv 재생 화면 좌측 상단 시계 표시 스크립트 |
+| `mpv/overlay.lua` | mpv 화면 알림창 표시 스크립트 |
 | `downloader.py` | yt-dlp 영상 다운로드 대기열 (웹 UI) |
 | `templates/` | 웹 UI 화면 |
 | `libLGTV_serial/` | LG TV RS-232 제어 라이브러리 (서브모듈) |
@@ -77,6 +79,8 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `CLOCK_FORMAT` | `%H:%M` | 재생 화면 좌측 상단에 표시할 현재 시각 형식(strftime). 비우면 표시 안 함 |
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 화면 높이에 맞춰 자동으로 결정 |
 | `CLOCK_FONT` | 없음 | 시계 글꼴 이름(`fc-list : family`로 확인). 비우면 mpv 기본 글꼴 |
+| `OVERLAY_DURATION` | `15` | 화면 알림창 기본 표시 시간(초). 알림마다 `duration`으로 바꿀 수 있음 |
+| `OVERLAY_FONT` | `CLOCK_FONT` | 화면 알림창 글꼴 이름. 비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴 |
 | `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
 | `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
@@ -155,6 +159,8 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/sound/play` | 구독 | 사운드 파일 재생. payload: `doorbell.mp3` 또는 `{"file": "doorbell.mp3", "volume": 80}` |
 | `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `玄関のドアが開きました。` 또는 `{"text": "...", "volume": 80, "lang": "ja", "speed": 1.2, "voice": "ja_JP-css10-6lang-medium", "speaker": 0}` |
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
+| `cvlc_tv/overlay/show` | 구독 | 화면 알림창 표시. payload: 글 또는 JSON (아래 "화면 알림창" 참고) |
+| `cvlc_tv/overlay/hide` | 구독 | 화면 알림창 닫기 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
 
@@ -221,3 +227,33 @@ automation:
 ALSA 장치를 직접 사용하는 환경에서는 두 번째 소리가 재생되지 않을 수 있습니다.
 
 예약 재생이 필요하면 Home Assistant 자동화에서 위 토픽(또는 등록된 버튼)을 호출하세요.
+
+## 화면 알림창
+
+`NOTIFY_CVLC_OVERLAY` notify 엔티티(보통 `notify.video_control_server_notify_cvlc_overlay`)와 닫기 버튼 `BTN_CVLC_OVERLAY_HIDE`가 자동으로 등록됩니다.
+message에는 일반 글이나, 디스코드 봇 notify와 같은 JSON을 넣습니다.
+
+| 키 | 설명 |
+|---|---|
+| `title` | 제목 (굵게) |
+| `message` | 내용. 줄바꿈과 `**굵게**` 사용 가능 |
+| `color` | 왼쪽 색 띠. `"#3498db"` 또는 숫자 |
+| `fields` | `[{"name": "...", "value": "...", "inline": true}]`. `inline`이 연속이면 한 줄에 3칸까지 |
+| `footer` | 바닥글. 뒤에 받은 시각이 붙음 |
+| `duration` | 표시 시간(초). 기본 `OVERLAY_DURATION`, `0`이면 닫기 전까지 표시 |
+
+`buttons`, `image`, `channel_id` 등 다른 키는 무시하므로 디스코드로 보내는 JSON을 그대로 보내도 됩니다.
+새 알림이 오면 이전 알림을 바꿔서 표시합니다. 알림창만 떠 있을 때 영상을 재생하면 알림창은 닫힙니다.
+
+```yaml
+- action: notify.send_message
+  target:
+    entity_id: notify.video_control_server_notify_cvlc_overlay
+  data:
+    message: >
+      {{ {"title": "택배 도착", "message": "현관 앞에 택배가 있습니다.", "color": "#e67e22",
+          "fields": [{"name": "시각", "value": now().strftime('%H:%M'), "inline": true}],
+          "duration": 20} | to_json }}
+```
+
+웹에서 시험: `curl -X POST http://<서버>:5000/overlay/show -H 'Content-Type: application/json' -d '{"title":"시험","message":"알림창"}'`

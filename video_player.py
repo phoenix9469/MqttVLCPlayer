@@ -63,9 +63,15 @@ MPV_AUDIO_FILTER = os.environ.get("MPV_AUDIO_FILTER", "")
 MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
 MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
 MPV_LOUDNESS_SCRIPT = os.path.join(BASE_DIR, "mpv", "loudness.lua")
+MPV_OVERLAY_SCRIPT = os.path.join(BASE_DIR, "mpv", "overlay.lua")
+# 화면 알림창: 기본 표시 시간(초)과 글꼴(비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴)
+OVERLAY_DURATION = float(os.environ.get("OVERLAY_DURATION", "15"))
+OVERLAY_FONT = os.environ.get("OVERLAY_FONT", "") or CLOCK_FONT
 # 재생 중인 mpv의 음량을 바꾸기 위한 IPC 소켓
-MPV_IPC_PATH = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(),
-                            f"mqttvlcplayer-mpv-{os.getuid()}.sock")
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+MPV_IPC_PATH = os.path.join(RUNTIME_DIR, f"mqttvlcplayer-mpv-{os.getuid()}.sock")
+# 영상이 없을 때 알림창만 띄우는 mpv의 IPC 소켓
+OVERLAY_IPC_PATH = os.path.join(RUNTIME_DIR, f"mqttvlcplayer-overlay-{os.getuid()}.sock")
 # 영상 음량 기본값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 config.json에 저장
 VIDEO_VOLUME = int(os.environ.get("VIDEO_VOLUME", "100"))
 
@@ -75,6 +81,18 @@ VLC_EXTRA_ARGS = shlex.split(os.environ.get("VLC_EXTRA_ARGS", ""))
 
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
+
+
+def mpv_quote(value):
+    """--script-opts 값: %바이트수%값 형식으로 감싸야 값 안의 %, 쉼표가 mpv 옵션 문법으로 해석되지 않는다"""
+    return f"%{len(value.encode())}%{value}"
+
+
+def overlay_script_opts():
+    opts = [f"overlay-duration={OVERLAY_DURATION:g}"]
+    if OVERLAY_FONT:
+        opts.append(f"overlay-font={mpv_quote(OVERLAY_FONT)}")
+    return opts
 
 
 def mpv_video_args():
@@ -88,18 +106,16 @@ def mpv_video_args():
     if MPV_AUDIO_FILTER:
         args.append(f"--af={MPV_AUDIO_FILTER}")
     # 스크립트 옵션은 --script-opts 하나에 모아서 전달 (여러 번 쓰면 마지막 것만 남음)
-    # %바이트수%값 형식으로 감싸야 값 안의 %, 쉼표가 mpv 옵션 문법으로 해석되지 않는다
-    def quote(value):
-        return f"%{len(value.encode())}%{value}"
-    script_opts = []
+    args.append(f"--script={MPV_OVERLAY_SCRIPT}")
+    script_opts = overlay_script_opts()
     if loudness.enabled:
         args.append(f"--script={MPV_LOUDNESS_SCRIPT}")
-        script_opts.append(f"loudness-file={quote(loudness.LOUDNESS_GAINS)}")
+        script_opts.append(f"loudness-file={mpv_quote(loudness.LOUDNESS_GAINS)}")
     if CLOCK_FORMAT:
         args.append(f"--script={MPV_CLOCK_SCRIPT}")
-        script_opts += [f"clock-format={quote(CLOCK_FORMAT)}", f"clock-size={CLOCK_SIZE}"]
+        script_opts += [f"clock-format={mpv_quote(CLOCK_FORMAT)}", f"clock-size={CLOCK_SIZE}"]
         if CLOCK_FONT:
-            script_opts.append(f"clock-font={quote(CLOCK_FONT)}")
+            script_opts.append(f"clock-font={mpv_quote(CLOCK_FONT)}")
     if script_opts:
         args.append("--script-opts=" + ",".join(script_opts))
     return args + MPV_EXTRA_ARGS
@@ -127,6 +143,8 @@ TOPIC_TV_SWITCH = "cvlc_tv/lgtv/switch"
 TOPIC_TV_SWITCH_SET = "cvlc_tv/lgtv/switch/set"
 TOPIC_PLAY = "cvlc_tv/cvlc/play"
 TOPIC_STOP = "cvlc_tv/cvlc/stop"
+TOPIC_OVERLAY_SHOW = "cvlc_tv/overlay/show"
+TOPIC_OVERLAY_HIDE = "cvlc_tv/overlay/hide"
 TOPIC_SOUND_PLAY = "cvlc_tv/sound/play"
 TOPIC_SOUND_SAY = "cvlc_tv/sound/say"
 TOPIC_SOUND_STOP = "cvlc_tv/sound/stop"
@@ -195,6 +213,17 @@ DISCOVERY = [
         "name": "BTN_CVLC_SOUND_STOP",
         "unique_id": "CVLC_SOUND_STOP",
         "command_topic": TOPIC_SOUND_STOP,
+    }),
+    # 화면 알림창: 디스코드 봇 notify와 같은 JSON(title, message, color, fields, footer) + duration
+    ("homeassistant/notify/cvlc_tv_overlay/config", {
+        "name": "NOTIFY_CVLC_OVERLAY",
+        "unique_id": "CVLC_OVERLAY",
+        "command_topic": TOPIC_OVERLAY_SHOW,
+    }),
+    ("homeassistant/button/cvlc_tv_overlay_hide/config", {
+        "name": "BTN_CVLC_OVERLAY_HIDE",
+        "unique_id": "CVLC_OVERLAY_HIDE",
+        "command_topic": TOPIC_OVERLAY_HIDE,
     }),
 ]
 
@@ -284,7 +313,63 @@ def on_download_finished():
 downloads = downloader.Downloader(lambda: config["ytdlp"], lambda: config["nas_folder"], on_download_finished)
 
 
+# ---------------------------------------------------------------------------
+# 화면 알림창 (mpv/overlay.lua)
+# ---------------------------------------------------------------------------
+
+# 영상이 없을 때 알림창만 띄우는 mpv: 검은 전체 화면, 알림창이 닫히면 스스로 종료
+OVERLAY_PLAYER_ARGS = ["mpv", "--fs", "--ontop", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
+                       "--force-window=immediate", "--no-audio", f"--input-ipc-server={OVERLAY_IPC_PATH}",
+                       f"--script={MPV_OVERLAY_SCRIPT}"] + MPV_EXTRA_ARGS
+overlay_player = Player(OVERLAY_PLAYER_ARGS)
+overlay_lock = threading.Lock()
+
+
+def parse_overlay_payload(payload):
+    """JSON이면 그대로, 아니면 {"message": 글}. mpv 스크립트로 넘길 JSON 문자열 반환"""
+    try:
+        data = json.loads(payload)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        data = {"message": payload}
+    return json.dumps(data, ensure_ascii=False)
+
+
+def show_overlay(payload):
+    """알림창 표시. 영상이 재생 중이면 그 화면에, 아니면 알림용 mpv를 띄워서 표시"""
+    if PLAYER_BACKEND != "mpv":
+        log.warning("Screen overlay needs mpv (VIDEO_PLAYER=mpv)")
+        return False
+    data = parse_overlay_payload(payload)
+    if player.playing:
+        return player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-show", data)
+    with overlay_lock:
+        if overlay_player.playing:
+            return overlay_player.mpv_command(OVERLAY_IPC_PATH, "script-message", "overlay-show", data)
+        # 새로 띄운 mpv는 스크립트가 IPC보다 늦게 준비될 수 있어서 첫 알림은 파일로 넘긴다
+        fd, path = tempfile.mkstemp(prefix="overlay-", suffix=".json", dir=RUNTIME_DIR)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        opts = overlay_script_opts() + [f"overlay-file={mpv_quote(path)}", "overlay-quit_when_done=yes"]
+        if overlay_player.play("--idle=yes", ["--script-opts=" + ",".join(opts)]):
+            return True
+        os.remove(path)
+        return False
+
+
+def hide_overlay():
+    if PLAYER_BACKEND != "mpv":
+        return False
+    if player.playing:
+        player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-hide")
+    overlay_player.stop()
+    return True
+
+
 def play_random():
+    # 알림용 mpv 창이 떠 있으면 영상 창을 가리지 않도록 닫는다
+    overlay_player.stop()
     if create_m3u8_playlist() == 0:
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
@@ -369,7 +454,8 @@ def on_connect(client, userdata, flags, reason_code, properties):
     log.info("MQTT connected to %s:%d", MQTT_HOST, MQTT_PORT)
     # 재접속 시에도 구독/discovery가 유지되도록 연결될 때마다 수행
     client.subscribe([(t, 0) for t in (TOPIC_TV_ON, TOPIC_TV_OFF, TOPIC_TV_SWITCH_SET, TOPIC_PLAY, TOPIC_STOP,
-                                       TOPIC_SOUND_PLAY, TOPIC_SOUND_SAY, TOPIC_SOUND_STOP)])
+                                       TOPIC_SOUND_PLAY, TOPIC_SOUND_SAY, TOPIC_SOUND_STOP,
+                                       TOPIC_OVERLAY_SHOW, TOPIC_OVERLAY_HIDE)])
     publish_ha_discovery()
     client.publish(TOPIC_AVAILABILITY, "online", retain=True)
     if STATUS_INTERVAL > 0:
@@ -401,6 +487,10 @@ def handle_message(topic, payload):
         sounds.say(text, opts.get("volume"), **tts_options(opts))
     elif topic == TOPIC_SOUND_STOP:
         sounds.stop()
+    elif topic == TOPIC_OVERLAY_SHOW:
+        show_overlay(payload)
+    elif topic == TOPIC_OVERLAY_HIDE:
+        hide_overlay()
 
 
 def on_message(client, userdata, message):
@@ -556,6 +646,20 @@ def sound_stop():
     return result(True)
 
 
+@app.route("/overlay/show", methods=["POST"])
+def overlay_show():
+    """화면 알림창 표시. body: 디스코드 봇 notify와 같은 JSON (title, message, color, fields, footer, duration)"""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "message": "JSON 객체를 보내세요."}), 400
+    return result(show_overlay(json.dumps(data, ensure_ascii=False)))
+
+
+@app.route("/overlay/hide", methods=["POST"])
+def overlay_hide():
+    return result(hide_overlay())
+
+
 @app.route("/ytdlp/download", methods=["POST"])
 def ytdlp_download():
     """링크 다운로드 요청. body: {"url": "...", "quality": "720"(선택)}"""
@@ -607,6 +711,7 @@ def play_video():
     videos = {os.path.basename(v): v for v in get_video_files()}
     if name not in videos:
         return "Unknown video", 400
+    overlay_player.stop()
     player.play(videos[name], video_volume_args())
     return redirect(url_for("file_list"))
 
@@ -615,6 +720,7 @@ def cleanup():
     """재생 중지, MQTT에 offline 알리고 연결 종료"""
     stop_event.set()
     player.stop()
+    overlay_player.stop()
     sounds.stop()
     try:
         client.publish(TOPIC_AVAILABILITY, "offline", retain=True).wait_for_publish(timeout=2)
