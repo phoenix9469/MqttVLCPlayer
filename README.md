@@ -8,7 +8,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **랜덤 재생 / 정지**: NAS 폴더의 `.mp4`, `.mkv`, `.avi` 파일을 섞어서 재생목록을 만들고 재생합니다. 재생은 항상 하나만 유지됩니다.
 - **시계 표시**: 재생 중 화면 좌측 상단에 기기의 현재 시각(`HH:MM`)을 표시합니다.
 - **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
-- **화면 알림창**: 화면 오른쪽 위에 디스코드 임베드 모양의 반투명 알림창(제목, 내용, 색 띠, 필드, 바닥글)을 띄웁니다. 영상 재생 중이면 영상 위에, 아니면 검은 화면을 띄워서 표시하고 알림이 사라지면 닫습니다(mpv).
+- **화면 알림창**: 디스코드 임베드 모양의 반투명 알림창(제목, 내용, 색 띠, 필드, 바닥글)을 띄웁니다. 기본 위치는 오른쪽 아래이고, 알림이 여러 개면 새 알림이 아래에 오고 이전 알림은 위로 밀려납니다. 영상 재생 중이면 영상 위에, 아니면 검은 화면을 띄워서 표시하고 알림이 모두 사라지면 닫습니다(mpv).
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **음량 조절**: 웹 UI에서 영상 음량과 알림 음량을 따로 조절합니다. 영상 음량은 재생 중에도 바로 바뀝니다(mpv).
 - **영상별 음량 맞추기**: 영상마다 평균 음량을 한 번 측정해 두고(`loudness.json`), 재생할 때 영상 전체에 같은 보정값을 적용합니다. 영상 안의 강약은 그대로 두고 영상끼리의 음량 차이만 줄입니다(mpv). 아직 측정하지 않은 영상은 보정 없이 재생됩니다.
@@ -80,6 +80,8 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `CLOCK_SIZE` | `0` | 시계 글자 크기(px). `0`이면 화면 높이에 맞춰 자동으로 결정 |
 | `CLOCK_FONT` | 없음 | 시계 글꼴 이름(`fc-list : family`로 확인). 비우면 mpv 기본 글꼴 |
 | `OVERLAY_DURATION` | `15` | 화면 알림창 기본 표시 시간(초). 알림마다 `duration`으로 바꿀 수 있음 |
+| `OVERLAY_POSITION` | `bottom-right` | 화면 알림창 기본 위치. 알림마다 `position`으로 바꿀 수 있음 |
+| `OVERLAY_OPACITY` | `0.6` | 화면 알림창 배경 불투명도(0 투명 ~ 1 불투명). 알림마다 `opacity`로 바꿀 수 있음 |
 | `OVERLAY_FONT` | `CLOCK_FONT` | 화면 알림창 글꼴 이름. 비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴 |
 | `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
@@ -160,7 +162,7 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `玄関のドアが開きました。` 또는 `{"text": "...", "volume": 80, "lang": "ja", "speed": 1.2, "voice": "ja_JP-css10-6lang-medium", "speaker": 0}` |
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/overlay/show` | 구독 | 화면 알림창 표시. payload: 글 또는 JSON (아래 "화면 알림창" 참고) |
-| `cvlc_tv/overlay/hide` | 구독 | 화면 알림창 닫기 |
+| `cvlc_tv/overlay/hide` | 구독 | 화면 알림창 닫기. payload에 `id`를 넣으면 그 알림만, 비우면 모두 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
 
@@ -241,9 +243,13 @@ message에는 일반 글이나, 디스코드 봇 notify와 같은 JSON을 넣습
 | `fields` | `[{"name": "...", "value": "...", "inline": true}]`. `inline`이 연속이면 한 줄에 3칸까지 |
 | `footer` | 바닥글. 뒤에 받은 시각이 붙음 |
 | `duration` | 표시 시간(초). 기본 `OVERLAY_DURATION`, `0`이면 닫기 전까지 표시 |
+| `position` | `bottom-right`(기본 `OVERLAY_POSITION`), `bottom-left`, `bottom`, `top-right`, `top-left`, `top`, `center` |
+| `opacity` | 배경 불투명도 0~1. 기본 `OVERLAY_OPACITY` |
+| `id` | 같은 `id`의 알림이 떠 있으면 새로 쌓지 않고 그 알림을 바꿈. `overlay/hide`로 이 알림만 닫을 때도 사용 |
 
 `buttons`, `image`, `channel_id` 등 다른 키는 무시하므로 디스코드로 보내는 JSON을 그대로 보내도 됩니다.
-새 알림이 오면 이전 알림을 바꿔서 표시합니다. 알림창만 떠 있을 때 영상을 재생하면 알림창은 닫힙니다.
+같은 위치에 알림이 여러 개면 새 알림이 모서리 쪽에 오고, 이전 알림은 밀려납니다(아래쪽 위치는 위로, 위쪽 위치는 아래로). 화면을 넘는 오래된 알림은 가려졌다가 시간이 되면 닫힙니다.
+`top-left`는 시계와 겹칠 수 있습니다. 알림창만 떠 있을 때 영상을 재생하면 알림창은 닫힙니다.
 
 ```yaml
 - action: notify.send_message

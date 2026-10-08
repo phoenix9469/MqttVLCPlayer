@@ -64,8 +64,10 @@ MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
 MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
 MPV_LOUDNESS_SCRIPT = os.path.join(BASE_DIR, "mpv", "loudness.lua")
 MPV_OVERLAY_SCRIPT = os.path.join(BASE_DIR, "mpv", "overlay.lua")
-# 화면 알림창: 기본 표시 시간(초)과 글꼴(비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴)
+# 화면 알림창: 기본 표시 시간(초), 위치, 배경 불투명도(0~1), 글꼴(비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴)
 OVERLAY_DURATION = float(os.environ.get("OVERLAY_DURATION", "15"))
+OVERLAY_POSITION = os.environ.get("OVERLAY_POSITION", "bottom-right")
+OVERLAY_OPACITY = float(os.environ.get("OVERLAY_OPACITY", "0.6"))
 OVERLAY_FONT = os.environ.get("OVERLAY_FONT", "") or CLOCK_FONT
 # 재생 중인 mpv의 음량을 바꾸기 위한 IPC 소켓
 RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
@@ -89,7 +91,8 @@ def mpv_quote(value):
 
 
 def overlay_script_opts():
-    opts = [f"overlay-duration={OVERLAY_DURATION:g}"]
+    opts = [f"overlay-duration={OVERLAY_DURATION:g}", f"overlay-position={mpv_quote(OVERLAY_POSITION)}",
+            f"overlay-opacity={OVERLAY_OPACITY:g}"]
     if OVERLAY_FONT:
         opts.append(f"overlay-font={mpv_quote(OVERLAY_FONT)}")
     return opts
@@ -214,7 +217,7 @@ DISCOVERY = [
         "unique_id": "CVLC_SOUND_STOP",
         "command_topic": TOPIC_SOUND_STOP,
     }),
-    # 화면 알림창: 디스코드 봇 notify와 같은 JSON(title, message, color, fields, footer) + duration
+    # 화면 알림창: 디스코드 봇 notify와 같은 JSON(title, message, color, fields, footer) + duration, position, opacity, id
     ("homeassistant/notify/cvlc_tv_overlay/config", {
         "name": "NOTIFY_CVLC_OVERLAY",
         "unique_id": "CVLC_OVERLAY",
@@ -358,12 +361,18 @@ def show_overlay(payload):
         return False
 
 
-def hide_overlay():
+def hide_overlay(note_id=""):
+    """알림창 닫기. note_id가 있으면 그 id의 알림만, 없으면 모두"""
     if PLAYER_BACKEND != "mpv":
         return False
+    note_id = str(note_id).strip()
     if player.playing:
-        player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-hide")
-    overlay_player.stop()
+        player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-hide", note_id)
+    if note_id:
+        # 알림창만 띄운 mpv는 남은 알림이 없으면 스스로 닫힘
+        overlay_player.mpv_command(OVERLAY_IPC_PATH, "script-message", "overlay-hide", note_id)
+    else:
+        overlay_player.stop()
     return True
 
 
@@ -490,7 +499,7 @@ def handle_message(topic, payload):
     elif topic == TOPIC_OVERLAY_SHOW:
         show_overlay(payload)
     elif topic == TOPIC_OVERLAY_HIDE:
-        hide_overlay()
+        hide_overlay(payload)
 
 
 def on_message(client, userdata, message):
@@ -648,7 +657,8 @@ def sound_stop():
 
 @app.route("/overlay/show", methods=["POST"])
 def overlay_show():
-    """화면 알림창 표시. body: 디스코드 봇 notify와 같은 JSON (title, message, color, fields, footer, duration)"""
+    """화면 알림창 표시. body: 디스코드 봇 notify와 같은 JSON (title, message, color, fields, footer)
+    + duration, position, opacity, id"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"status": "error", "message": "JSON 객체를 보내세요."}), 400
@@ -657,7 +667,9 @@ def overlay_show():
 
 @app.route("/overlay/hide", methods=["POST"])
 def overlay_hide():
-    return result(hide_overlay())
+    """알림창 닫기. body: {"id": "..."}(선택), 없으면 모두"""
+    data = request.get_json(silent=True)
+    return result(hide_overlay(data.get("id", "") if isinstance(data, dict) else ""))
 
 
 @app.route("/ytdlp/download", methods=["POST"])

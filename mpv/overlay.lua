@@ -1,10 +1,16 @@
--- 화면 오른쪽 위에 디스코드 임베드 모양의 반투명 알림창을 띄우는 mpv 스크립트
--- script-message overlay-show <JSON>: 알림창 표시 (새 알림이 오면 이전 알림을 바꿈)
---   JSON: {"title", "message", "color", "fields": [{"name", "value", "inline"}], "footer", "duration"}
+-- 디스코드 임베드 모양의 반투명 알림창을 띄우는 mpv 스크립트
+-- script-message overlay-show <JSON>: 알림창 추가. 같은 위치에 여러 개면 새 알림이 모서리 쪽에 오고
+--   이전 알림은 밀려남 (아래쪽 위치면 위로, 위쪽 위치면 아래로)
+--   JSON: {"title", "message", "color", "fields": [{"name", "value", "inline"}], "footer",
+--          "duration", "position", "opacity", "id"}
 --   duration: 표시 시간(초), 0 이하면 overlay-hide 전까지 계속 표시
--- script-message overlay-hide: 알림창 닫기
--- 옵션: --script-opts=overlay-font=Noto Sans,overlay-file=첫 알림 JSON 파일,overlay-quit_when_done=yes
---       (quit_when_done: 알림창이 닫히면 mpv 종료. 알림만 띄우려고 따로 실행한 mpv에서 사용)
+--   position: bottom-right(기본), bottom-left, bottom, top-right, top-left, top, center
+--   opacity: 배경 불투명도 0(투명)~1(불투명)
+--   id: 같은 id의 알림이 떠 있으면 새로 추가하지 않고 그 알림을 바꿈
+-- script-message overlay-hide [id]: id의 알림 닫기, id가 없으면 모두 닫기
+-- 옵션: --script-opts=overlay-font=Noto Sans,overlay-position=bottom-right,overlay-opacity=0.6,
+--       overlay-duration=15,overlay-file=첫 알림 JSON 파일,overlay-quit_when_done=yes
+--       (quit_when_done: 알림이 모두 닫히면 mpv 종료. 알림만 띄우려고 따로 실행한 mpv에서 사용)
 local options = require "mp.options"
 local utils = require "mp.utils"
 
@@ -13,12 +19,19 @@ local opts = {
     file = "",
     quit_when_done = false,
     duration = 15,
+    position = "bottom-right",
+    opacity = 0.6,
 }
 options.read_options(opts, "overlay")
 
+local POSITIONS = {
+    ["bottom-right"] = true, ["bottom-left"] = true, ["bottom"] = true,
+    ["top-right"] = true, ["top-left"] = true, ["top"] = true, ["center"] = true,
+}
+local MAX_NOTES = 20   -- 오래된 알림부터 버림
+
 local overlay = mp.create_osd_overlay("ass-events")
-local current = nil   -- 표시 중인 알림 (JSON을 읽은 table)
-local hide_timer = nil
+local notes = {}   -- 표시 중인 알림 (오래된 것부터). JSON을 읽은 table + received, timer
 
 -- 디스코드 다크 테마 색 (RRGGBB)
 local BG = "2B2D31"
@@ -26,7 +39,6 @@ local TEXT = "FFFFFF"
 local SUBTEXT = "B5BAC1"
 local MUTED = "949BA4"
 local DEFAULT_STRIPE = "1E1F22"
-local BG_ALPHA = "30"   -- 00 불투명 ~ FF 투명
 
 local function ass_color(rgb)
     return "&H" .. rgb:sub(5, 6) .. rgb:sub(3, 4) .. rgb:sub(1, 2) .. "&"
@@ -171,19 +183,19 @@ local function shape(path, rgb, alpha)
     return string.format("{\\an7\\pos(0,0)\\bord0\\shad0\\1c%s\\1a&H%s&\\p1}%s{\\p0}", ass_color(rgb), alpha, path)
 end
 
-local function render()
-    if not current then
-        overlay:remove()
-        return
+-- 불투명도(0~1) → ASS 알파 (00 불투명 ~ FF 투명)
+local function ass_alpha(opacity)
+    local o = tonumber(opacity)
+    if not o then
+        o = opts.opacity
     end
-    local width, height = mp.get_osd_size()
-    if not width or width <= 0 or height <= 0 then
-        return
-    end
-    overlay.res_x = width
-    overlay.res_y = height
+    o = math.max(0, math.min(1, o))
+    return string.format("%02X", math.floor((1 - o) * 255 + 0.5))
+end
 
-    local s = height / 1080
+-- 알림창 하나를 (x0, y0)에 그림. events가 nil이면 크기만 계산. 폭과 높이 반환
+local function card(note, x0, y0, events, s)
+    local width = mp.get_osd_size()
     local margin = math.floor(40 * s)
     local pad = math.floor(26 * s)
     local stripe = math.floor(8 * s)
@@ -191,11 +203,11 @@ local function render()
     local cw = box_w - stripe - 2 * pad
     local font = opts.font ~= "" and ("\\fn" .. opts.font) or ""
 
-    local title = current.title and tostring(current.title) or ""
-    local message = current.message and tostring(current.message) or ""
-    local fields = type(current.fields) == "table" and current.fields or {}
-    local footer = current.footer and tostring(current.footer) or ""
-    footer = (footer ~= "" and (footer .. "  •  ") or "") .. os.date("%H:%M", current.received)
+    local title = note.title and tostring(note.title) or ""
+    local message = note.message and tostring(note.message) or ""
+    local fields = type(note.fields) == "table" and note.fields or {}
+    local footer = note.footer and tostring(note.footer) or ""
+    footer = (footer ~= "" and (footer .. "  •  ") or "") .. os.date("%H:%M", note.received)
 
     -- 필드가 없으면 상자 폭을 글 길이에 맞춤 (짧은 알림이 넓은 상자에 뜨지 않게)
     if #fields == 0 then
@@ -209,12 +221,10 @@ local function render()
         cw = math.max(math.floor(360 * s), math.min(cw, math.ceil(need + 4 * s)))
         box_w = cw + stripe + 2 * pad
     end
-    local x0 = width - margin - box_w
-    local y0 = margin
     local cx = x0 + stripe + pad
-
-    local events = {}
     local y = y0 + pad
+    local out = events or {}
+    local first = #out + 1
 
     -- 한 덩어리의 글을 줄 단위로 그림. "**" 사이는 굵게
     local function text_block(text, x, max_w, size, rgb, bold)
@@ -228,13 +238,11 @@ local function render()
                 bold_on = not bold_on
                 return (bold or bold_on) and "{\\b1}" or "{\\b0}"
             end)
-            events[#events + 1] = string.format("{\\an7\\pos(%d,%d)%s\\fs%d%s\\bord0\\shad0\\1c%s\\q2}%s",
+            out[#out + 1] = string.format("{\\an7\\pos(%d,%d)%s\\fs%d%s\\bord0\\shad0\\1c%s\\q2}%s",
                 x, y + (i - 1) * line_h, font, size, start, ass_color(rgb), body)
         end
         return #lines * line_h
     end
-
-    local stripe_rgb = parse_color(current.color) or DEFAULT_STRIPE
 
     if title ~= "" then
         y = y + text_block(title, cx, cw, math.floor(38 * s), TEXT, true)
@@ -298,44 +306,141 @@ local function render()
     y = y + text_block(footer, cx, cw, math.floor(24 * s), MUTED, false)
 
     local box_h = y - y0 + pad
-    local radius = math.floor(12 * s)
-    local corner = math.min(radius, stripe)
-    -- 반투명이라 겹치면 진해지므로 색 띠와 배경을 겹치지 않게 나눠 그림
-    table.insert(events, 1, shape(rounded_rect(x0 + stripe, y0, box_w - stripe, box_h, 0, radius, radius, 0), BG, BG_ALPHA))
-    table.insert(events, 1, shape(rounded_rect(x0, y0, stripe, box_h, corner, 0, 0, corner), stripe_rgb, "00"))
+    if events then
+        local radius = math.floor(12 * s)
+        local corner = math.min(radius, stripe)
+        local stripe_rgb = parse_color(note.color) or DEFAULT_STRIPE
+        -- 반투명이라 겹치면 진해지므로 색 띠와 배경을 겹치지 않게 나눠 그림. 글자보다 먼저(아래에) 그림
+        table.insert(out, first, shape(rounded_rect(x0 + stripe, y0, box_w - stripe, box_h, 0, radius, radius, 0),
+            BG, ass_alpha(note.opacity)))
+        table.insert(out, first, shape(rounded_rect(x0, y0, stripe, box_h, corner, 0, 0, corner), stripe_rgb, "00"))
+    end
+    return box_w, box_h
+end
 
+local function render()
+    if #notes == 0 then
+        overlay:remove()
+        return
+    end
+    local width, height = mp.get_osd_size()
+    if not width or width <= 0 or height <= 0 then
+        return
+    end
+    overlay.res_x = width
+    overlay.res_y = height
+    local s = height / 1080
+    local margin = math.floor(40 * s)
+    local gap = math.floor(16 * s)
+
+    -- 위치별로 새 알림부터 모음
+    local groups = {}
+    for i = #notes, 1, -1 do
+        local pos = notes[i].position
+        groups[pos] = groups[pos] or {}
+        table.insert(groups[pos], notes[i])
+    end
+
+    local events = {}
+    for pos, list in pairs(groups) do
+        local sizes, total = {}, 0
+        for i, note in ipairs(list) do
+            local w, h = card(note, 0, 0, nil, s)
+            sizes[i] = { w, h }
+            total = total + h + (i > 1 and gap or 0)
+        end
+        local top = pos:find("^top") ~= nil
+        -- 위쪽: 새 알림이 맨 위, 이전 알림은 아래로. 아래쪽·가운데: 새 알림이 맨 아래, 이전 알림은 위로
+        local y = top and margin
+            or (pos == "center" and math.floor((height + math.min(total, height - 2 * margin)) / 2))
+            or (height - margin)
+        for i, note in ipairs(list) do
+            local w, h = sizes[i][1], sizes[i][2]
+            local y0 = top and y or (y - h)
+            -- 화면을 넘어가는 오래된 알림은 그리지 않음 (시간이 되면 닫힘)
+            if y0 < margin or y0 + h > height - margin then
+                if i > 1 then
+                    break
+                end
+            end
+            local x0
+            if pos:find("left$") then
+                x0 = margin
+            elseif pos:find("right$") then
+                x0 = width - margin - w
+            else
+                x0 = math.floor((width - w) / 2)
+            end
+            card(note, x0, y0, events, s)
+            y = top and (y0 + h + gap) or (y0 - gap)
+        end
+    end
     overlay.data = table.concat(events, "\n")
     overlay:update()
 end
 
-local function hide()
-    if hide_timer then
-        hide_timer:kill()
-        hide_timer = nil
+local function remove_note(note)
+    for i, n in ipairs(notes) do
+        if n == note then
+            if n.timer then
+                n.timer:kill()
+            end
+            table.remove(notes, i)
+            break
+        end
     end
-    current = nil
-    overlay:remove()
-    if opts.quit_when_done then
+end
+
+local function after_change()
+    render()
+    if #notes == 0 and opts.quit_when_done then
         mp.command("quit")
     end
 end
 
+local function hide(id)
+    if id and id ~= "" then
+        for i = #notes, 1, -1 do
+            if tostring(notes[i].id) == id then
+                remove_note(notes[i])
+            end
+        end
+    else
+        while #notes > 0 do
+            remove_note(notes[1])
+        end
+    end
+    after_change()
+end
+
 local function show(json)
-    local data = utils.parse_json(json or "")
-    if type(data) ~= "table" then
+    local note = utils.parse_json(json or "")
+    if type(note) ~= "table" then
         -- JSON이 아니면 글 그대로
-        data = { message = json or "" }
+        note = { message = json or "" }
     end
-    data.received = os.time()
-    current = data
-    if hide_timer then
-        hide_timer:kill()
-        hide_timer = nil
+    note.received = os.time()
+    note.position = POSITIONS[note.position] and note.position or
+        (POSITIONS[opts.position] and opts.position or "bottom-right")
+    -- 같은 id가 떠 있으면 그 알림을 바꿈 (새 알림으로 모서리 쪽에 다시 놓임)
+    if note.id ~= nil then
+        for i = #notes, 1, -1 do
+            if tostring(notes[i].id) == tostring(note.id) then
+                remove_note(notes[i])
+            end
+        end
     end
-    local duration = tonumber(data.duration) or opts.duration
+    while #notes >= MAX_NOTES do
+        remove_note(notes[1])
+    end
+    local duration = tonumber(note.duration) or opts.duration
     if duration > 0 then
-        hide_timer = mp.add_timeout(duration, hide)
+        note.timer = mp.add_timeout(duration, function()
+            remove_note(note)
+            after_change()
+        end)
     end
+    notes[#notes + 1] = note
     render()
 end
 
