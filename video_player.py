@@ -14,6 +14,7 @@ import threading
 import paho.mqtt.client as mqtt
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
 
+import downloader
 import loudness
 import tts
 from player import PLAYER_BACKEND, Player
@@ -204,11 +205,17 @@ config = {
     "nas_folder": os.environ.get("NAS_FOLDER", "/mv"),
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
+    "ytdlp": dict(downloader.DEFAULT_SETTINGS),
 }
 if os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, "r") as f:
         config.update({k: v for k, v in json.load(f).items() if k in config})
 config["sound_volume"] = sound.set_default_volume(config["sound_volume"])
+try:
+    config["ytdlp"] = downloader.normalize_settings(config["ytdlp"])
+except ValueError as e:
+    log.warning("Invalid download settings in %s, using defaults: %s", CONFIG_FILE, e)
+    config["ytdlp"] = dict(downloader.DEFAULT_SETTINGS)
 
 
 def save_config():
@@ -266,6 +273,15 @@ def create_m3u8_playlist():
 player = Player(VIDEO_PLAYER_ARGS)
 # 영상이 재생 중이면 HDMI 소리 출력이 이미 깨어 있으므로 알림 앞 무음을 넣지 않는다
 sounds.output_active = lambda: player.playing
+
+
+def on_download_finished():
+    # 새로 받은 영상의 음량을 미리 측정해 둔다 (재생목록은 다음 랜덤 재생 때 다시 만들어짐)
+    if PLAYER_BACKEND == "mpv":
+        loudness.scan(get_video_files())
+
+
+downloads = downloader.Downloader(lambda: config["ytdlp"], lambda: config["nas_folder"], on_download_finished)
 
 
 def play_random():
@@ -432,6 +448,8 @@ def index():
     return render_template("index.html", config=config, tv_power=tv_power, playing=player.playing,
                            sound_files=get_sound_files(), sounds_folder=SOUNDS_FOLDER, sound_volume=config["sound_volume"],
                            video_volume=config["video_volume"],
+                           ytdlp=config["ytdlp"], ytdlp_version=downloader.version(),
+                           ytdlp_qualities=downloader.QUALITIES, ytdlp_containers=downloader.CONTAINERS,
                            tts_speed=tts.parse_speed(None), tts_voices=tts.PIPER_VOICES,
                            tts_voice=tts.PIPER_MODEL, tts_speaker=tts.PIPER_SPEAKER)
 
@@ -536,6 +554,44 @@ def tts_test():
 def sound_stop():
     sounds.stop()
     return result(True)
+
+
+@app.route("/ytdlp/download", methods=["POST"])
+def ytdlp_download():
+    """링크 다운로드 요청. body: {"url": "...", "quality": "720"(선택)}"""
+    data = request.get_json(silent=True) or {}
+    try:
+        job_id = downloads.add(str(data.get("url", "")), data.get("quality") or None)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    return jsonify({"status": "success", "id": job_id})
+
+
+@app.route("/ytdlp/jobs")
+def ytdlp_jobs():
+    return jsonify({"jobs": downloads.jobs()})
+
+
+@app.route("/ytdlp/cancel/<int:job_id>", methods=["POST"])
+def ytdlp_cancel(job_id):
+    return result(downloads.cancel(job_id))
+
+
+@app.route("/ytdlp/settings", methods=["POST"])
+def ytdlp_settings():
+    data = request.get_json(silent=True) or {}
+    try:
+        config["ytdlp"] = downloader.normalize_settings(data, config["ytdlp"])
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    save_config()
+    return jsonify({"status": "success", "settings": config["ytdlp"]})
+
+
+@app.route("/ytdlp/update", methods=["POST"])
+def ytdlp_update():
+    ok, message = downloader.update_ytdlp()
+    return jsonify({"status": "success" if ok else "error", "message": message}), 200 if ok else 500
 
 
 @app.route("/file_list")

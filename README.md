@@ -11,6 +11,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **개별 영상 재생**: 웹 UI의 영상 목록에서 선택해서 재생합니다.
 - **음량 조절**: 웹 UI에서 영상 음량과 알림 음량을 따로 조절합니다. 영상 음량은 재생 중에도 바로 바뀝니다(mpv).
 - **영상별 음량 맞추기**: 영상마다 평균 음량을 한 번 측정해 두고(`loudness.json`), 재생할 때 영상 전체에 같은 보정값을 적용합니다. 영상 안의 강약은 그대로 두고 영상끼리의 음량 차이만 줄입니다(mpv). 아직 측정하지 않은 영상은 보정 없이 재생됩니다.
+- **영상 다운로드**: 웹 UI에 유튜브 등 영상 링크를 넣으면 yt-dlp로 영상 폴더에 받습니다. 화질, 파일 형식, 파일 이름, 저장 폴더, 속도 제한, 쿠키, 추가 yt-dlp 옵션을 웹에서 설정합니다(`config.json`에 저장). 기본은 이 노트북이 하드웨어 디코딩할 수 있는 H.264 우선입니다.
 - **앱 재시작**: 웹 UI의 "앱 재시작" 버튼. `start.sh`로 실행 중이면 환경변수 파일도 다시 읽습니다.
 - **LG TV 전원 제어**: [libLGTV_serial](https://github.com/ehjortberg/libLGTV_serial)로 전원 켜기/끄기, 상태 조회를 합니다.
 - **Home Assistant 연동**: 버튼, 스위치, 바이너리 센서가 자동으로 등록됩니다(retain). 서버가 꺼지면 엔티티가 "사용 불가"로 표시됩니다.
@@ -24,6 +25,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 | `tts.py` | TTS 엔진(piper-plus, espeak-ng). 문장을 WAV 파일로 생성 |
 | `player.py` | 재생기(mpv 또는 cvlc) 프로세스 실행/종료 (영상과 알림 소리가 함께 사용) |
 | `mpv/clock.lua` | mpv 재생 화면 좌측 상단 시계 표시 스크립트 |
+| `downloader.py` | yt-dlp 영상 다운로드 대기열 (웹 UI) |
 | `templates/` | 웹 UI 화면 |
 | `libLGTV_serial/` | LG TV RS-232 제어 라이브러리 (서브모듈) |
 
@@ -45,6 +47,16 @@ python3 -m venv .venv
 ```
 
 piper-plus 1.x를 쓰는 경우 명령어 이름은 `piper`입니다(2.0부터 `piper-plus`로 바뀜). 앱은 두 버전 모두 지원합니다.
+
+영상 다운로드(yt-dlp)에서 유튜브를 받으려면 JavaScript 런타임이 필요합니다. 영상과 음성을 합치는 데는 `ffmpeg`가 쓰입니다.
+
+```bash
+sudo apt install ffmpeg
+curl -fsSL https://deno.land/install.sh | sh   # deno 설치 (yt-dlp 권장 런타임)
+sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서도 찾을 수 있게
+```
+
+유튜브가 바뀌어 다운로드가 실패하면 웹 UI의 "yt-dlp 업데이트" 버튼을 누른 뒤 앱을 재시작하세요.
 
 이미 clone했다면 `git submodule update --init`으로 `libLGTV_serial`을 받습니다.
 
