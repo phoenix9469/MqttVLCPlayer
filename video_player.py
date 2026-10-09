@@ -83,6 +83,8 @@ VLC_EXTRA_ARGS = shlex.split(os.environ.get("VLC_EXTRA_ARGS", ""))
 
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi")
+# 수동 재생 폴더에서 보여 줄 영상 확장자
+LIBRARY_EXTENSIONS = VIDEO_EXTENSIONS + (".mov", ".m4v", ".webm", ".ts", ".m2ts", ".wmv", ".flv", ".mpg", ".mpeg")
 
 
 def mpv_quote(value):
@@ -98,7 +100,7 @@ def overlay_script_opts():
     return opts
 
 
-def mpv_video_args():
+def mpv_video_args(clock=True):
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
     # --sid=no·--sub-auto=no: 영상에 들어 있거나 옆에 있는 자막은 표시하지 않음 (시계는 OSD라 영향 없음)
     args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
@@ -114,7 +116,7 @@ def mpv_video_args():
     if loudness.enabled:
         args.append(f"--script={MPV_LOUDNESS_SCRIPT}")
         script_opts.append(f"loudness-file={mpv_quote(loudness.LOUDNESS_GAINS)}")
-    if CLOCK_FORMAT:
+    if clock and CLOCK_FORMAT:
         args.append(f"--script={MPV_CLOCK_SCRIPT}")
         script_opts += [f"clock-format={mpv_quote(CLOCK_FORMAT)}", f"clock-size={CLOCK_SIZE}"]
         if CLOCK_FONT:
@@ -124,9 +126,9 @@ def mpv_video_args():
     return args + MPV_EXTRA_ARGS
 
 
-def vlc_video_args():
+def vlc_video_args(clock=True):
     args = ["cvlc", "--fullscreen", "--play-and-exit", "--no-osd", "--audio-filter", "normvol"]
-    if CLOCK_FORMAT:
+    if clock and CLOCK_FORMAT:
         # marq 필터: position 5 = 위(4) + 왼쪽(1), 1초마다 갱신
         args += ["--sub-source=marq", f"--marq-marquee={CLOCK_FORMAT}", "--marq-position=5",
                  "--marq-x=30", "--marq-y=20", "--marq-refresh=1000"]
@@ -136,6 +138,8 @@ def vlc_video_args():
 
 
 VIDEO_PLAYER_ARGS = mpv_video_args() if PLAYER_BACKEND == "mpv" else vlc_video_args()
+# 수동 재생(웹 UI 라이브러리)은 시계 없이
+MANUAL_PLAYER_ARGS = mpv_video_args(clock=False) if PLAYER_BACKEND == "mpv" else vlc_video_args(clock=False)
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
@@ -235,6 +239,8 @@ app = Flask(__name__)
 # 웹 UI에서 바꿀 수 있는 설정 (config.json에 저장)
 config = {
     "nas_folder": os.environ.get("NAS_FOLDER", "/mv"),
+    # 수동 재생 폴더 (하위 폴더까지 웹 UI에서 골라 재생, 시계 없음)
+    "library_folder": os.environ.get("LIBRARY_FOLDER", "/LL"),
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
     "ytdlp": dict(downloader.DEFAULT_SETTINGS),
@@ -374,6 +380,50 @@ def hide_overlay(note_id=""):
     else:
         overlay_player.stop()
     return True
+
+
+def play_manual(path):
+    """수동 재생: 영상 하나를 시계 없이 재생"""
+    overlay_player.stop()
+    return player.play(path, video_volume_args(), args=MANUAL_PLAYER_ARGS)
+
+
+def library_path(rel):
+    """수동 재생 폴더 기준 상대 경로 → 실제 경로. 폴더 밖이면 None"""
+    root = os.path.realpath(config["library_folder"])
+    path = os.path.realpath(os.path.join(root, rel.strip("/")))
+    if os.path.commonpath([root, path]) != root:
+        return None
+    return path
+
+
+def list_library(rel):
+    """수동 재생 폴더의 하위 폴더와 영상 목록. 숨김 파일은 제외"""
+    path = library_path(rel)
+    if path is None or not os.path.isdir(path):
+        return None
+    folders, videos = [], []
+    try:
+        entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
+    except OSError as e:
+        log.warning("Cannot read library folder %s: %s", path, e)
+        return None
+    root = os.path.realpath(config["library_folder"])
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        item = {"name": entry.name, "path": os.path.relpath(entry.path, root)}
+        # 폴더 밖을 가리키는 링크는 열 수 없으므로 목록에서도 뺀다
+        if library_path(item["path"]) is None:
+            continue
+        try:
+            if entry.is_dir():
+                folders.append(item)
+            elif entry.name.lower().endswith(LIBRARY_EXTENSIONS):
+                videos.append(item)
+        except OSError:
+            continue
+    return folders, videos
 
 
 def play_random():
@@ -557,10 +607,11 @@ def index():
 def update_config():
     """설정 업데이트"""
     data = request.get_json(silent=True) or {}
-    nas_folder = data.get("nas_folder", config["nas_folder"])
-    if not os.path.isdir(nas_folder):
-        return jsonify({"status": "error", "message": f"폴더를 찾을 수 없습니다: {nas_folder}"}), 400
-    config["nas_folder"] = nas_folder
+    folders = {key: str(data.get(key, config[key])).strip() for key in ("nas_folder", "library_folder")}
+    for folder in folders.values():
+        if not os.path.isdir(folder):
+            return jsonify({"status": "error", "message": f"폴더를 찾을 수 없습니다: {folder}"}), 400
+    config.update(folders)
     save_config()
     return jsonify({"status": "success", "config": config})
 
@@ -714,6 +765,37 @@ def ytdlp_update():
 def file_list():
     """영상 파일 목록을 보여주는 페이지"""
     return render_template("file_list.html", video_files=get_video_files())
+
+
+@app.route("/library")
+def library():
+    """수동 재생 폴더 탐색 (path: 수동 재생 폴더 기준 상대 경로)"""
+    rel = request.args.get("path", "").strip("/")
+    listing = list_library(rel)
+    if listing is None and rel:
+        return redirect(url_for("library"))
+    folders, videos = listing or ([], [])
+    # 경로 표시: [("LL", ""), ("드라마", "드라마"), ("시즌1", "드라마/시즌1")]
+    crumbs, parts = [], []
+    for part in rel.split("/") if rel else []:
+        parts.append(part)
+        crumbs.append((part, "/".join(parts)))
+    return render_template("library.html", root=config["library_folder"], rel=rel, crumbs=crumbs,
+                           parent="/".join(rel.split("/")[:-1]) if rel else None,
+                           folders=folders, videos=videos, missing=listing is None,
+                           message=request.args.get("msg", ""))
+
+
+@app.route("/library/play", methods=["POST"])
+def library_play():
+    rel = request.form.get("path", "")
+    path = library_path(rel)
+    folder = os.path.dirname(rel)
+    if path is None or not os.path.isfile(path) or not path.lower().endswith(LIBRARY_EXTENSIONS):
+        return redirect(url_for("library", path=folder, msg="재생할 수 없는 파일입니다."))
+    ok = play_manual(path)
+    return redirect(url_for("library", path=folder,
+                            msg=f"재생: {os.path.basename(path)}" if ok else "재생에 실패했습니다."))
 
 
 @app.route("/play_video", methods=["POST"])

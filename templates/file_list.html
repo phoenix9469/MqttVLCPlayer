@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <title>영상 목록</title>
+    <title>자동 재생 목록</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
 <header>
-    <h1>영상 목록 <span class="hint">({{ video_files | length }}개)</span></h1>
+    <h1>자동 재생 목록 <span class="hint">({{ video_files | length }}개)</span></h1>
     <a class="btn secondary" href="{{ url_for('index') }}">← 처음으로</a>
 </header>
 

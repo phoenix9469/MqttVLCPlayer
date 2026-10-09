@@ -328,3 +328,30 @@ audio {
 main.single {
     columns: auto;
 }
+
+/* 수동 재생: 현재 위치와 폴더 줄 */
+.crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin-bottom: 10px;
+    word-break: break-all;
+}
+
+.crumbs a {
+    color: var(--primary);
+}
+
+.list li.folder {
+    min-height: 44px;
+}
+
+.list li.folder a {
+    color: var(--text);
+    text-decoration: none;
+    padding: 8px 0;
+}
+
+.list li.folder a:hover {
+    color: var(--primary);
+}

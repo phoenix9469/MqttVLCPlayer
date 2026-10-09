@@ -26,7 +26,8 @@
             <button class="btn" data-url="/stop_video" data-ok="영상이 종료되었습니다." data-fail="영상 종료에 실패했습니다.">영상 종료</button>
             <button class="btn" data-url="/on_tv" data-ok="TV 전원이 켜졌습니다." data-fail="TV 전원을 켜지 못했습니다.">TV ON</button>
             <button class="btn" data-url="/off_tv" data-ok="TV 전원이 꺼졌습니다." data-fail="TV 전원을 끄지 못했습니다.">TV OFF</button>
-            <a class="btn secondary" href="{{ url_for('file_list') }}">영상 목록</a>
+            <a class="btn secondary" href="{{ url_for('file_list') }}">자동 재생 목록</a>
+            <a class="btn secondary" href="{{ url_for('library') }}">수동 재생</a>
             <button class="btn secondary" id="restart-app">앱 재시작</button>
         </div>
     </section>
@@ -211,8 +212,12 @@
         <h2>설정</h2>
         <form id="config-form">
             <div class="form-group">
-                <label for="nas_folder">영상(NAS) 폴더</label>
+                <label for="nas_folder">자동 재생 폴더 (랜덤 재생, 시계 표시)</label>
                 <input type="text" id="nas_folder" name="nas_folder" value="{{ config['nas_folder'] }}" required>
+            </div>
+            <div class="form-group">
+                <label for="library_folder">수동 재생 폴더 (하위 폴더까지 골라서 재생, 시계 없음)</label>
+                <input type="text" id="library_folder" name="library_folder" value="{{ config['library_folder'] }}" required>
             </div>
             <div class="actions">
                 <button type="submit" class="btn">설정 저장</button>
@@ -232,7 +237,7 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ nas_folder: formData.get('nas_folder') })
+                body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder') })
             })
             .then(response => response.json())
             .then(data => {
