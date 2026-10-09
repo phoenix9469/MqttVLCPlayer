@@ -1,6 +1,7 @@
 -- 재생 화면 좌측 상단에 기기의 현재 시각을 표시하는 mpv 스크립트
 -- 옵션: --script-opts=clock-format=%H:%M,clock-size=0,clock-font=Noto Sans
 --       (size는 px, 0이면 화면 높이의 5%. font가 비어 있으면 mpv 기본 OSD 글꼴)
+--       clock-enabled=no: 시계를 표시하지 않음 (수동 재생에서 --script-opts-append로 지정)
 local options = require "mp.options"
 
 local opts = {
@@ -9,8 +10,12 @@ local opts = {
     font = "",
     x = 30,
     y = 20,
+    enabled = true,
 }
 options.read_options(opts, "clock")
+if not opts.enabled then
+    return
+end
 
 local overlay = mp.create_osd_overlay("ass-events")
 
