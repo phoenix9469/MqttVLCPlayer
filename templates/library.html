@@ -10,7 +10,7 @@
 <body>
 
 <header>
-    <h1>수동 재생 <span class="hint">({{ folders | length }}개 폴더, {{ videos | length }}개 영상)</span></h1>
+    <h1>수동 재생 <span class="hint">({{ folders | length }}개 폴더, {% if bluray %}{{ bluray | length }}개 블루레이, {% endif %}{{ videos | length }}개 영상)</span></h1>
     <div class="row">
         <button class="btn secondary" id="stop">영상 종료</button>
         <a class="btn secondary" href="{{ url_for('index') }}">← 처음으로</a>
@@ -42,6 +42,15 @@
             {% for folder in folders %}
             <li class="folder"><a class="name" href="{{ url_for('library', path=folder.path) }}">📁 {{ folder.name }}</a></li>
             {% endfor %}
+            {% for disc in bluray %}
+            <li>
+                <span class="name">💿 {{ disc.name }} <span class="hint">블루레이 · 본편 재생</span></span>
+                <form action="{{ url_for('library_play') }}" method="post">
+                    <input type="hidden" name="path" value="{{ disc.path }}">
+                    <button type="submit">재생</button>
+                </form>
+            </li>
+            {% endfor %}
             {% for video in videos %}
             <li>
                 <span class="name">{{ video.name }}</span>
@@ -52,7 +61,7 @@
             </li>
             {% endfor %}
         </ul>
-        {% if not folders and not videos %}
+        {% if not folders and not bluray and not videos %}
         <p>이 폴더에는 하위 폴더나 영상이 없습니다.</p>
         {% endif %}
         {% endif %}

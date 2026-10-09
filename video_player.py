@@ -382,10 +382,25 @@ def hide_overlay(note_id=""):
     return True
 
 
+def is_bluray(path):
+    """블루레이 리핑 폴더(BDMV/index.bdmv가 있는 폴더)인지. 이름 대소문자는 구분하지 않음"""
+    try:
+        bdmv = next((e.path for e in os.scandir(path) if e.is_dir() and e.name.lower() == "bdmv"), None)
+        return bdmv is not None and any(e.is_file() and e.name.lower() == "index.bdmv" for e in os.scandir(bdmv))
+    except OSError:
+        return False
+
+
 def play_manual(path):
-    """수동 재생: 영상 하나를 시계 없이 재생"""
+    """수동 재생: 영상 파일 하나, 또는 블루레이 폴더의 본편(가장 긴 타이틀)을 시계 없이 재생"""
     overlay_player.stop()
-    return player.play(path, video_volume_args(), args=MANUAL_PLAYER_ARGS)
+    extra = video_volume_args()
+    if os.path.isdir(path):
+        # 블루레이: 암호화를 푼 리핑만 재생 가능 (메뉴 없이 타이틀 바로 재생)
+        if PLAYER_BACKEND == "mpv":
+            return player.play("bd://longest", extra + [f"--bluray-device={path}"], args=MANUAL_PLAYER_ARGS)
+        return player.play(f"bluray://{path}", extra, args=MANUAL_PLAYER_ARGS)
+    return player.play(path, extra, args=MANUAL_PLAYER_ARGS)
 
 
 def library_path(rel):
@@ -398,11 +413,11 @@ def library_path(rel):
 
 
 def list_library(rel):
-    """수동 재생 폴더의 하위 폴더와 영상 목록. 숨김 파일은 제외"""
+    """수동 재생 폴더의 하위 폴더, 블루레이 폴더, 영상 목록. 숨김 파일은 제외"""
     path = library_path(rel)
     if path is None or not os.path.isdir(path):
         return None
-    folders, videos = [], []
+    folders, bluray, videos = [], [], []
     try:
         entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
     except OSError as e:
@@ -418,12 +433,12 @@ def list_library(rel):
             continue
         try:
             if entry.is_dir():
-                folders.append(item)
+                (bluray if is_bluray(entry.path) else folders).append(item)
             elif entry.name.lower().endswith(LIBRARY_EXTENSIONS):
                 videos.append(item)
         except OSError:
             continue
-    return folders, videos
+    return folders, bluray, videos
 
 
 def play_random():
@@ -774,7 +789,7 @@ def library():
     listing = list_library(rel)
     if listing is None and rel:
         return redirect(url_for("library"))
-    folders, videos = listing or ([], [])
+    folders, bluray, videos = listing or ([], [], [])
     # 경로 표시: [("LL", ""), ("드라마", "드라마"), ("시즌1", "드라마/시즌1")]
     crumbs, parts = [], []
     for part in rel.split("/") if rel else []:
@@ -782,7 +797,7 @@ def library():
         crumbs.append((part, "/".join(parts)))
     return render_template("library.html", root=config["library_folder"], rel=rel, crumbs=crumbs,
                            parent="/".join(rel.split("/")[:-1]) if rel else None,
-                           folders=folders, videos=videos, missing=listing is None,
+                           folders=folders, bluray=bluray, videos=videos, missing=listing is None,
                            message=request.args.get("msg", ""))
 
 
@@ -791,7 +806,9 @@ def library_play():
     rel = request.form.get("path", "")
     path = library_path(rel)
     folder = os.path.dirname(rel)
-    if path is None or not os.path.isfile(path) or not path.lower().endswith(LIBRARY_EXTENSIONS):
+    playable = path is not None and (
+        (os.path.isfile(path) and path.lower().endswith(LIBRARY_EXTENSIONS)) or (os.path.isdir(path) and is_bluray(path)))
+    if not playable:
         return redirect(url_for("library", path=folder, msg="재생할 수 없는 파일입니다."))
     ok = play_manual(path)
     return redirect(url_for("library", path=folder,
