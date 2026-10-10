@@ -434,3 +434,36 @@ main.single {
     font-variant-numeric: tabular-nums;
     color: var(--muted);
 }
+
+/* 영상 목록의 코덱 표시 (이름 아래 작은 글씨). 하드웨어 디코딩이 안 되면 주황색 */
+.codec {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.codec:empty::before {
+    content: "코덱 확인 중…";
+}
+
+.codec.hw::after {
+    content: " · HW";
+    color: var(--ok);
+}
+
+.codec.cpu {
+    color: #c2410c;
+}
+
+.codec.cpu::after {
+    content: " · CPU 디코딩";
+    font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+    .codec.cpu {
+        color: #fb923c;
+    }
+}

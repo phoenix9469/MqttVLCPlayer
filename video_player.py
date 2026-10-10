@@ -10,12 +10,14 @@ import subprocess
 import sys
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import paho.mqtt.client as mqtt
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
 
 import downloader
 import loudness
+import media_info
 import tts
 from player import PLAYER_BACKEND, Player
 import sound
@@ -851,6 +853,30 @@ def ytdlp_update():
 def file_list():
     """영상 파일 목록을 보여주는 페이지"""
     return render_template("file_list.html", video_files=get_video_files())
+
+
+@app.route("/media/info", methods=["POST"])
+def media_info_route():
+    """영상 목록의 코덱 정보. body: {"kind": "auto"(파일 이름) | "library"(수동 재생 폴더 기준 경로), "items": [...]}
+    응답: {항목: {"label": "H.264 10bit · 1080p", "hw": true/false/null} 또는 null}"""
+    data = request.get_json(silent=True) or {}
+    items = [str(i) for i in (data.get("items") or [])][:50]
+    if data.get("kind") == "auto":
+        videos = {os.path.basename(v): v for v in get_video_files()}
+        paths = {item: videos.get(item) for item in items}
+    else:
+        paths = {}
+        for item in items:
+            path = library_path(item)
+            if path and os.path.isdir(path):
+                path = media_info.bluray_stream(path) if is_bluray(path) else None
+            elif path and not path.lower().endswith(LIBRARY_EXTENSIONS):
+                path = None
+            paths[item] = path
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        infos = dict(zip(paths, pool.map(lambda p: media_info.info(p) if p else None, paths.values())))
+    media_info.flush()
+    return jsonify(infos)
 
 
 @app.route("/playback/status")

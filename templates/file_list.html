@@ -18,10 +18,10 @@
     <section class="card">
         {% if video_files %}
         <input type="text" id="filter" placeholder="이름으로 찾기">
-        <ul class="list" id="videos">
+        <ul class="list" id="videos" data-media-kind="auto">
             {% for video in video_files %}
-            <li>
-                <span class="name">{{ video | basename }}</span>
+            <li data-media="{{ video | basename }}">
+                <span class="name">{{ video | basename }}<span class="codec"></span></span>
                 <form action="/play_video" method="post">
                     <input type="hidden" name="video" value="{{ video | basename }}">
                     <button type="submit">재생</button>
@@ -47,5 +47,6 @@
         });
     }
 </script>
+<script src="{{ url_for('static', filename='media-info.js') }}"></script>
 </body>
 </html>
