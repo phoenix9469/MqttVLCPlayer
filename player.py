@@ -77,6 +77,36 @@ class Player:
         """재생 중인 mpv에 IPC 명령 전송, 성공 여부 반환"""
         return self.mpv_request(ipc_path, *command)[0]
 
+    def mpv_get(self, ipc_path, names):
+        """재생 중인 mpv의 속성 여러 개를 한 번에 읽음. {이름: 값}, 읽지 못한 속성은 None. 연결 실패 시 None"""
+        if not self.playing:
+            return None
+        values = {name: None for name in names}
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)
+                sock.connect(ipc_path)
+                requests = "".join(json.dumps({"command": ["get_property", name], "request_id": i}) + "\n"
+                                   for i, name in enumerate(names))
+                sock.sendall(requests.encode())
+                reader = sock.makefile(encoding="utf-8")
+                pending = len(names)
+                while pending:
+                    line = reader.readline()
+                    if not line:
+                        break
+                    reply = json.loads(line)
+                    # 이벤트 줄(event)은 건너뛰고 응답만 request_id로 맞춤
+                    if "request_id" not in reply or "event" in reply:
+                        continue
+                    pending -= 1
+                    if reply.get("error") == "success":
+                        values[names[reply["request_id"]]] = reply.get("data")
+        except (OSError, ValueError, IndexError) as e:
+            log.warning("mpv IPC get %s failed: %s", names, e)
+            return None
+        return values
+
     def wait(self):
         """재생이 끝나거나 stop()될 때까지 대기"""
         process = self._process

@@ -13,11 +13,39 @@
     <h1>영상 재생 및 설정</h1>
     <div class="status">
         <span class="chip"><span class="dot {% if tv_power %}on{% endif %}"></span>TV {% if tv_power is none %}알 수 없음{% elif tv_power %}켜짐{% else %}꺼짐{% endif %}</span>
-        <span class="chip"><span class="dot {% if playing %}on{% endif %}"></span>영상 {% if playing %}재생 중{% else %}정지{% endif %}</span>
+        <span class="chip" id="video-chip"><span class="dot {% if playing %}on{% endif %}"></span><span>영상 {% if playing %}재생 중{% else %}정지{% endif %}</span></span>
     </div>
 </header>
 
 <main>
+    <!-- 재생 중: 재생 중일 때만 표시, 1초마다 갱신 -->
+    <section class="card now" id="now" hidden>
+        <h2>재생 중 <span class="chip" id="now-mode"></span></h2>
+        <p class="now-title" id="now-title"></p>
+        <p class="hint" id="now-info"></p>
+        <div class="seekbar">
+            <span id="now-pos">0:00</span>
+            <input type="range" id="now-seek" min="0" max="0" step="1" value="0" aria-label="재생 위치">
+            <span id="now-dur">0:00</span>
+        </div>
+        <div class="transport">
+            <button class="btn secondary" data-seek="-10" title="10초 뒤로">« 10</button>
+            <button class="btn secondary" data-seek="-5" title="5초 뒤로">‹ 5</button>
+            <button class="btn" id="now-pause">일시정지</button>
+            <button class="btn secondary" data-seek="5" title="5초 앞으로">5 ›</button>
+            <button class="btn secondary" data-seek="10" title="10초 앞으로">10 »</button>
+        </div>
+        <div class="transport" id="now-playlist" hidden>
+            <button class="btn secondary" data-action="prev">이전 영상</button>
+            <button class="btn secondary" data-action="next">다음 영상</button>
+        </div>
+        <details id="now-chapters-box" open hidden>
+            <summary id="now-chapters-summary">챕터</summary>
+            <ol class="chapters" id="now-chapters"></ol>
+        </details>
+        <p class="hint" id="now-unsupported" hidden>VLC로 재생 중이라 정보와 제어를 쓸 수 없습니다 (mpv만 지원).</p>
+    </section>
+
     <!-- 제어 -->
     <section class="card">
         <h2>제어</h2>
@@ -252,6 +280,107 @@
                 console.error("설정 업데이트 오류:", error);
             });
         });
+
+        // 재생 중인 영상 정보와 제어
+        function formatTime(seconds) {
+            if (seconds == null || isNaN(seconds)) return '--:--';
+            seconds = Math.max(0, Math.floor(seconds));
+            const h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = seconds % 60;
+            return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+        }
+
+        function control(action, value) {
+            return fetch('/playback/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, value: value })
+            }).then(() => setTimeout(refreshNow, 200));
+        }
+
+        let seeking = false;       // 위치 막대를 끌고 있는 동안은 갱신으로 덮어쓰지 않음
+        let chapterKey = '';       // 챕터 목록이 바뀔 때만 다시 그림
+        let nowTimer = null;
+        function refreshNow() {
+            clearTimeout(nowTimer);
+            fetch('/playback/status').then(r => r.json()).then(data => {
+                const card = document.getElementById('now');
+                card.hidden = !data.playing;
+                const chip = document.getElementById('video-chip');
+                chip.querySelector('.dot').classList.toggle('on', !!data.playing);
+                chip.lastElementChild.textContent = data.playing ? (data.paused ? '영상 일시정지' : '영상 재생 중') : '영상 정지';
+                if (!data.playing) return;
+                document.getElementById('now-mode').textContent = data.mode || '';
+                document.getElementById('now-unsupported').hidden = data.supported !== false;
+                if (!data.ready) {
+                    document.getElementById('now-title').textContent = data.source || '불러오는 중';
+                    return;
+                }
+                document.getElementById('now-title').textContent = data.title || data.file || '';
+                const info = [];
+                if (data.is_playlist && data.playlist_count) info.push(`${data.playlist_pos + 1} / ${data.playlist_count}번째`);
+                if (data.width) info.push(`${data.width}×${data.height}`);
+                if (data.codec) info.push(data.codec.split(' ')[0]);
+                info.push(data.hwdec && data.hwdec !== 'no' ? `하드웨어 디코딩(${data.hwdec})` : 'CPU 디코딩');
+                if (data.volume != null) info.push(`음량 ${Math.round(data.volume)}`);
+                if (data.file && data.file !== data.title) info.push(data.file);
+                document.getElementById('now-info').textContent = info.join(' · ');
+
+                const seek = document.getElementById('now-seek');
+                seek.max = Math.floor(data.duration || 0);
+                if (!seeking) seek.value = Math.floor(data.position || 0);
+                document.getElementById('now-pos').textContent = formatTime(seeking ? seek.value : data.position);
+                document.getElementById('now-dur').textContent = formatTime(data.duration);
+                document.getElementById('now-pause').textContent = data.paused ? '재생' : '일시정지';
+                document.getElementById('now-playlist').hidden = !data.is_playlist;
+
+                // 챕터: 블루레이 등 챕터가 있을 때만
+                const box = document.getElementById('now-chapters-box');
+                const chapters = data.chapters || [];
+                box.hidden = chapters.length === 0;
+                const key = chapters.map(c => c.time).join(',');
+                const list = document.getElementById('now-chapters');
+                if (key !== chapterKey) {
+                    chapterKey = key;
+                    list.innerHTML = '';
+                    chapters.forEach((chapter, i) => {
+                        const item = document.createElement('li');
+                        const button = document.createElement('button');
+                        button.className = 'chapter';
+                        button.innerHTML = `<span class="time">${formatTime(chapter.time)}</span> <span>${escapeHtml(chapter.title)}</span>`;
+                        button.addEventListener('click', () => control('chapter', i));
+                        item.appendChild(button);
+                        list.appendChild(item);
+                    });
+                }
+                list.querySelectorAll('button').forEach((button, i) => button.classList.toggle('current', i === data.chapter));
+                const current = chapters[data.chapter];
+                document.getElementById('now-chapters-summary').textContent =
+                    `챕터 ${chapters.length}개` + (current ? ` · 지금 ${data.chapter + 1}. ${current.title}` : '');
+            }).catch(error => console.error("재생 정보 오류:", error))
+              .finally(() => {
+                  // 화면을 보고 있을 때만 1초마다 갱신
+                  if (!document.hidden) nowTimer = setTimeout(refreshNow, 1000);
+              });
+        }
+
+        document.querySelectorAll('#now [data-seek]').forEach(button => {
+            button.addEventListener('click', () => control('seek', Number(button.dataset.seek)));
+        });
+        document.querySelectorAll('#now [data-action]').forEach(button => {
+            button.addEventListener('click', () => control(button.dataset.action));
+        });
+        document.getElementById('now-pause').addEventListener('click', () => control('pause'));
+        const nowSeek = document.getElementById('now-seek');
+        nowSeek.addEventListener('input', () => {
+            seeking = true;
+            document.getElementById('now-pos').textContent = formatTime(nowSeek.value);
+        });
+        nowSeek.addEventListener('change', () => {
+            seeking = false;
+            control('seek_to', Number(nowSeek.value));
+        });
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNow(); });
+        refreshNow();
 
         function postJson(url, body, failMessage) {
             fetch(url, {

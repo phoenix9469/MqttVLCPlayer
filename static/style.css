@@ -28,6 +28,11 @@
     box-sizing: border-box;
 }
 
+/* display를 지정한 요소도 hidden이면 숨김 */
+[hidden] {
+    display: none !important;
+}
+
 body {
     accent-color: var(--primary);  /* 슬라이더·체크박스 색 */
     margin: 0;
@@ -354,4 +359,78 @@ main.single {
 
 .list li.folder a:hover {
     color: var(--primary);
+}
+
+/* 재생 중 카드 */
+.now h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.now-title {
+    margin: 0 0 4px;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.seekbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9rem;
+}
+
+.seekbar input[type=range] {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+}
+
+.transport {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.transport .btn {
+    padding: 8px 6px;
+}
+
+.chapters {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.chapters button.chapter {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 40px;
+    margin-top: 4px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    text-align: left;
+}
+
+.chapters button.chapter:hover {
+    border-color: var(--primary);
+}
+
+.chapters button.chapter.current {
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.chapters .time {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
 }

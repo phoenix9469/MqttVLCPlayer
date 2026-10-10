@@ -382,6 +382,74 @@ def hide_overlay(note_id=""):
     return True
 
 
+# ---------------------------------------------------------------------------
+# 재생 중인 영상 정보와 제어 (웹 UI, mpv IPC)
+# ---------------------------------------------------------------------------
+
+PLAY_MODES = {"random": "랜덤 재생", "list": "자동 재생 목록", "manual": "수동 재생", "bluray": "블루레이"}
+now_playing = {"mode": None, "source": None}
+
+
+def set_now_playing(mode, source):
+    now_playing.update(mode=mode, source=source)
+
+
+PLAYBACK_PROPERTIES = ["media-title", "path", "time-pos", "duration", "pause", "chapter", "chapter-list",
+                       "playlist-pos", "playlist-count", "width", "height", "video-codec", "hwdec-current",
+                       "volume"]
+
+
+def playback_status():
+    """재생 중인 영상 정보. 재생 중이 아니면 {"playing": False}"""
+    if not player.playing:
+        return {"playing": False}
+    mode = now_playing["mode"]
+    status = {"playing": True, "mode": PLAY_MODES.get(mode, ""), "is_playlist": mode == "random",
+              "source": os.path.basename(now_playing["source"] or "")}
+    if PLAYER_BACKEND != "mpv":
+        return {**status, "supported": False}
+    props = player.mpv_get(MPV_IPC_PATH, PLAYBACK_PROPERTIES)
+    if props is None:
+        return {**status, "supported": True, "ready": False}
+    chapters = [{"title": c.get("title") or f"챕터 {i + 1}", "time": c.get("time", 0)}
+                for i, c in enumerate(props["chapter-list"] or [])]
+    title = props["media-title"] or os.path.basename(props["path"] or "")
+    if mode == "bluray":
+        # 블루레이는 media-title이 비어 있거나 bd://로 나오므로 폴더 이름을 제목으로
+        title = status["source"]
+    return {**status, "supported": True, "ready": True,
+            "title": title, "file": os.path.basename(props["path"] or ""),
+            "position": props["time-pos"], "duration": props["duration"], "paused": bool(props["pause"]),
+            "chapter": props["chapter"], "chapters": chapters,
+            "playlist_pos": props["playlist-pos"], "playlist_count": props["playlist-count"],
+            "width": props["width"], "height": props["height"], "codec": props["video-codec"],
+            "hwdec": props["hwdec-current"], "volume": props["volume"]}
+
+
+def playback_control(action, value=None):
+    """재생 제어: pause(일시정지 전환), seek(상대 초), seek_to(절대 초), chapter(번호), next/prev(재생목록)"""
+    if PLAYER_BACKEND != "mpv" or not player.playing:
+        return False
+    try:
+        if action == "pause":
+            command = ["cycle", "pause"]
+        elif action == "seek":
+            command = ["seek", float(value), "relative+exact"]
+        elif action == "seek_to":
+            command = ["seek", max(0.0, float(value)), "absolute+exact"]
+        elif action == "chapter":
+            command = ["set_property", "chapter", int(value)]
+        elif action == "next":
+            command = ["playlist-next", "force"]
+        elif action == "prev":
+            command = ["playlist-prev", "force"]
+        else:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return player.mpv_command(MPV_IPC_PATH, *command)
+
+
 def is_bluray(path):
     """블루레이 리핑 폴더(BDMV/index.bdmv가 있는 폴더)인지. 이름 대소문자는 구분하지 않음"""
     try:
@@ -396,10 +464,12 @@ def play_manual(path):
     overlay_player.stop()
     extra = video_volume_args()
     if os.path.isdir(path):
+        set_now_playing("bluray", path)
         # 블루레이: 암호화를 푼 리핑만 재생 가능 (메뉴 없이 타이틀 바로 재생)
         if PLAYER_BACKEND == "mpv":
             return player.play("bd://longest", extra + [f"--bluray-device={path}"], args=MANUAL_PLAYER_ARGS)
         return player.play(f"bluray://{path}", extra, args=MANUAL_PLAYER_ARGS)
+    set_now_playing("manual", path)
     return player.play(path, extra, args=MANUAL_PLAYER_ARGS)
 
 
@@ -447,6 +517,7 @@ def play_random():
     if create_m3u8_playlist() == 0:
         log.warning("No videos to play in %s", config["nas_folder"])
         return False
+    set_now_playing("random", config["nas_folder"])
     # mpv는 .m3u8을 스트림(HLS)으로 열 수 있어서 재생목록임을 명시한다
     return player.play(f"--playlist={PLAYLIST_PATH}" if PLAYER_BACKEND == "mpv" else PLAYLIST_PATH,
                        video_volume_args())
@@ -782,6 +853,18 @@ def file_list():
     return render_template("file_list.html", video_files=get_video_files())
 
 
+@app.route("/playback/status")
+def playback_status_route():
+    return jsonify(playback_status())
+
+
+@app.route("/playback/control", methods=["POST"])
+def playback_control_route():
+    """body: {"action": "pause" | "seek" | "seek_to" | "chapter" | "next" | "prev", "value": 숫자}"""
+    data = request.get_json(silent=True) or {}
+    return result(playback_control(str(data.get("action", "")), data.get("value")))
+
+
 @app.route("/library")
 def library():
     """수동 재생 폴더 탐색 (path: 수동 재생 폴더 기준 상대 경로)"""
@@ -823,6 +906,7 @@ def play_video():
     if name not in videos:
         return "Unknown video", 400
     overlay_player.stop()
+    set_now_playing("list", videos[name])
     player.play(videos[name], video_volume_args())
     return redirect(url_for("file_list"))
 
