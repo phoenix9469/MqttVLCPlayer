@@ -60,6 +60,10 @@
             <button class="btn" id="stream-play">재생</button>
         </div>
         <p class="hint" id="stream-status">최고 화질로 전체 화면 재생합니다. 라이브는 항상 맨 앞(실시간)을 유지합니다.</p>
+        <div class="form-group">
+            <label class="check"><input type="checkbox" id="archive-auto" {% if config.archive_auto %}checked{% endif %}> 라이브를 틀면 바로 녹화</label>
+            <label class="check"><input type="checkbox" id="archive-from-start" {% if config.archive_from_start %}checked{% endif %}> 녹화는 방송 처음부터 (끄면 녹화를 시작한 시점부터)</label>
+        </div>
         <ul class="jobs" id="archives" hidden></ul>
     </section>
 
@@ -265,6 +269,11 @@
                 <label for="library_folder">수동 재생 폴더 (하위 폴더까지 골라서 재생, 시계 없음)</label>
                 <input type="text" id="library_folder" name="library_folder" value="{{ config['library_folder'] }}" required>
             </div>
+            <div class="form-group">
+                <label for="archive_folder">라이브 녹화 폴더</label>
+                <input type="text" id="archive_folder" name="archive_folder" value="{{ config['archive_folder'] }}" placeholder="비우면 {{ config['library_folder'] }}/라이브 아카이브">
+                <span class="hint">없는 폴더면 새로 만듭니다. 바꾼 뒤 시작하는 녹화부터 적용됩니다.</span>
+            </div>
             <div class="actions">
                 <button type="submit" class="btn">설정 저장</button>
             </div>
@@ -283,7 +292,8 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder') })
+                body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder'),
+                                       archive_folder: formData.get('archive_folder') })
             })
             .then(response => response.json())
             .then(data => {
@@ -422,6 +432,7 @@
                     active = active || running;
                     const item = document.createElement('li');
                     let state = `${escapeHtml(job.status)} · ${formatTime(job.seconds)} · ${formatSize(job.size)}`;
+                    if (job.note) state += `<br><span class="hint">${escapeHtml(job.note)}</span>`;
                     if (job.error) state += `<br><span class="hint">${escapeHtml(job.error)}</span>`;
                     if (job.file) state += `<br><span class="hint">${escapeHtml(job.file)}</span>`;
                     item.innerHTML = `<div class="info"><strong>🔴 ${escapeHtml(job.title || job.url)}</strong><br>${state}</div>` +
@@ -455,10 +466,20 @@
                 status.textContent = data.status === 'success'
                     ? `${data.live ? '🔴 라이브' : '▶ 재생'}: ${data.title || input.value}`
                     : (data.message || '재생하지 못했습니다. 링크를 확인하세요.');
-                if (data.status === 'success') setTimeout(refreshNow, 1500);
+                if (data.status === 'success') { setTimeout(refreshNow, 1500); setTimeout(refreshArchives, 2000); }
             })
             .catch(() => { status.textContent = '재생하지 못했습니다.'; })
             .finally(() => { button.disabled = false; });
+        });
+        ['archive-auto', 'archive-from-start'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                fetch('/stream/archive/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto: document.getElementById('archive-auto').checked,
+                                           from_start: document.getElementById('archive-from-start').checked })
+                }).catch(error => console.error("녹화 설정 오류:", error));
+            });
         });
         document.getElementById('stream-url').addEventListener('keydown', event => {
             if (event.key === 'Enter') document.getElementById('stream-play').click();

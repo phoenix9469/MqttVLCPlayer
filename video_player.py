@@ -246,6 +246,10 @@ config = {
     "nas_folder": os.environ.get("NAS_FOLDER", "/mv"),
     # 수동 재생 폴더 (하위 폴더까지 웹 UI에서 골라 재생, 시계 없음)
     "library_folder": os.environ.get("LIBRARY_FOLDER", "/LL"),
+    # 라이브 녹화 저장 폴더 (비우면 수동 재생 폴더 안의 "라이브 아카이브")
+    "archive_folder": os.environ.get("ARCHIVE_FOLDER", ""),
+    "archive_auto": False,        # 라이브를 틀면 바로 녹화
+    "archive_from_start": True,   # 녹화를 방송 처음부터 (끄면 누른 시점부터)
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
     "ytdlp": dict(downloader.DEFAULT_SETTINGS),
@@ -483,7 +487,11 @@ def playback_control(action, value=None):
 # 링크 재생 (유튜브 등, 라이브 포함)
 # ---------------------------------------------------------------------------
 
-archiver = stream.Archiver(lambda: config["ytdlp"], lambda: config["library_folder"])
+def archive_folder():
+    return config["archive_folder"] or os.path.join(config["library_folder"], "라이브 아카이브")
+
+
+archiver = stream.Archiver(lambda: config["ytdlp"], archive_folder)
 STREAM_RETRIES = 5
 
 
@@ -504,6 +512,11 @@ def play_stream(url, retry=0):
         args.append(f"--script={MPV_LIVE_SCRIPT}")
     if not player.play(url, video_volume_args(), args=args):
         return False
+    if live and config["archive_auto"] and not archiver.recording(info["url"]):
+        try:
+            archiver.start(info["url"], info.get("title", ""), config["archive_from_start"])
+        except ValueError as e:
+            log.warning("Auto archive failed: %s", e)
     if live:
         threading.Thread(target=watch_live, args=(url, generation, retry), daemon=True).start()
     return True
@@ -783,7 +796,14 @@ def update_config():
     for folder in folders.values():
         if not os.path.isdir(folder):
             return jsonify({"status": "error", "message": f"폴더를 찾을 수 없습니다: {folder}"}), 400
-    config.update(folders)
+    # 녹화 폴더는 비워도 되고(기본 위치), 없으면 만든다
+    archive = str(data.get("archive_folder", config["archive_folder"])).strip()
+    if archive:
+        try:
+            os.makedirs(archive, exist_ok=True)
+        except OSError as e:
+            return jsonify({"status": "error", "message": f"녹화 폴더를 만들 수 없습니다: {archive} ({e})"}), 400
+    config.update(folders, archive_folder=archive)
     save_config()
     return jsonify({"status": "success", "config": config})
 
@@ -997,10 +1017,23 @@ def stream_archive():
     if not url.startswith(("http://", "https://")):
         return jsonify({"status": "error", "message": "녹화할 라이브가 없습니다."}), 400
     try:
-        job_id = archiver.start(url, info.get("title", "") if url == info.get("url") else "")
+        job_id = archiver.start(url, info.get("title", "") if url == info.get("url") else "",
+                                config["archive_from_start"])
     except ValueError as e:
         return jsonify({"status": "error", "message": str(e)}), 400
     return jsonify({"status": "success", "id": job_id})
+
+
+@app.route("/stream/archive/settings", methods=["POST"])
+def stream_archive_settings():
+    """녹화 선택: {"auto": 라이브를 틀면 바로 녹화, "from_start": 방송 처음부터}"""
+    data = request.get_json(silent=True) or {}
+    if "auto" in data:
+        config["archive_auto"] = bool(data["auto"])
+    if "from_start" in data:
+        config["archive_from_start"] = bool(data["from_start"])
+    save_config()
+    return jsonify({"status": "success", "auto": config["archive_auto"], "from_start": config["archive_from_start"]})
 
 
 @app.route("/stream/archive/stop/<int:job_id>", methods=["POST"])
