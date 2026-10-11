@@ -415,7 +415,8 @@ def stop_playback():
 
 PLAYBACK_PROPERTIES = ["media-title", "path", "time-pos", "duration", "pause", "chapter", "chapter-list",
                        "playlist-pos", "playlist-count", "width", "height", "video-codec", "hwdec-current",
-                       "volume", "demuxer-cache-time", "container-fps", "estimated-vf-fps"]
+                       "volume", "demuxer-cache-time", "container-fps", "estimated-vf-fps",
+                       "user-data/live/margin"]
 
 
 def playback_status():
@@ -444,7 +445,9 @@ def playback_status():
     latency = None
     if mode == "live" and props["demuxer-cache-time"] is not None and props["time-pos"] is not None:
         # 받아 둔 분량의 끝과 지금 위치의 차이 = 받을 수 있는 가장 최근 장면보다 늦은 정도
-        latency = max(0.0, props["demuxer-cache-time"] - props["time-pos"])
+        # live.lua가 버벅임을 막으려고 맨 앞에서 두는 여유(조각 2개 분량)는 빼고 보여 줌
+        margin = props["user-data/live/margin"] or 0
+        latency = max(0.0, props["demuxer-cache-time"] - props["time-pos"] - margin)
     return {**status, "supported": True, "ready": True,
             "title": title,
             "position": props["time-pos"], "duration": props["duration"], "paused": bool(props["pause"]),
