@@ -45,6 +45,10 @@
             <button class="btn secondary" data-action="prev">이전 영상</button>
             <button class="btn secondary" data-action="next">다음 영상</button>
         </div>
+        <div class="row" id="now-subs-box" hidden>
+            <label for="now-subs">자막</label>
+            <select id="now-subs" aria-label="자막"></select>
+        </div>
         <details id="now-chapters-box" open hidden>
             <summary id="now-chapters-summary">챕터</summary>
             <ol class="chapters" id="now-chapters"></ol>
@@ -279,6 +283,15 @@
                 <input type="text" id="archive_folder" name="archive_folder" value="{{ config['archive_folder'] }}" placeholder="비우면 {{ config['library_folder'] }}/라이브 아카이브">
                 <span class="hint">없는 폴더면 새로 만듭니다. 바꾼 뒤 시작하는 녹화부터 적용됩니다.</span>
             </div>
+            <div class="form-group">
+                <label for="sub_langs">자막 언어 순서 (수동 재생)</label>
+                <select id="sub_langs" name="sub_langs">
+                    {% for order in ['ko,ja,en', 'ko,en,ja', 'ja,ko,en', 'ja,en,ko', 'en,ko,ja', 'en,ja,ko'] %}
+                    <option value="{{ order }}" {% if config['sub_langs'] == order %}selected{% endif %}>{{ order | replace('ko', '한국어') | replace('ja', '일본어') | replace('en', '영어') | replace(',', ' → ') }}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">영상과 같은 이름의 자막 파일(srt, ass, smi, vtt 등)을 내용으로 언어를 판별해서 앞 순서 자막을 표시합니다. 재생 중에 바꿀 수도 있습니다.</span>
+            </div>
             <div class="actions">
                 <button type="submit" class="btn">설정 저장</button>
             </div>
@@ -298,7 +311,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder'),
-                                       archive_folder: formData.get('archive_folder') })
+                                       archive_folder: formData.get('archive_folder'), sub_langs: formData.get('sub_langs') })
             })
             .then(response => response.json())
             .then(data => {
@@ -332,6 +345,7 @@
 
         let seeking = false;       // 위치 막대를 끌고 있는 동안은 갱신으로 덮어쓰지 않음
         let chapterKey = '';       // 챕터 목록이 바뀔 때만 다시 그림
+        let subsKey = '';          // 자막 목록도 마찬가지
         let nowTimer = null;
         function refreshNow() {
             clearTimeout(nowTimer);
@@ -383,6 +397,18 @@
                 document.getElementById('now-pause').textContent = data.paused ? '재생' : '일시정지';
                 document.getElementById('now-playlist').hidden = !data.is_playlist;
 
+                // 자막: 자막이 있을 때만 (고르는 중에는 덮어쓰지 않음)
+                const subs = data.subs || [];
+                document.getElementById('now-subs-box').hidden = subs.length === 0;
+                const subSelect = document.getElementById('now-subs');
+                const subKey = subs.map(s => s.id + s.label).join('|');
+                if (subKey !== subsKey) {
+                    subsKey = subKey;
+                    subSelect.innerHTML = '<option value="no">끄기</option>' +
+                        subs.map(s => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join('');
+                }
+                if (document.activeElement !== subSelect) subSelect.value = data.sid ? String(data.sid) : 'no';
+
                 // 챕터: 블루레이 등 챕터가 있을 때만
                 const box = document.getElementById('now-chapters-box');
                 const chapters = data.chapters || [];
@@ -413,6 +439,10 @@
               });
         }
 
+        document.getElementById('now-subs').addEventListener('change', function() {
+            control('sub', this.value);
+            this.blur();
+        });
         document.querySelectorAll('#now [data-seek]').forEach(button => {
             button.addEventListener('click', () => control('seek', Number(button.dataset.seek)));
         });

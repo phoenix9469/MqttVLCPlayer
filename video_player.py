@@ -23,6 +23,7 @@ import tts
 from player import PLAYER_BACKEND, Player
 import sound
 import stream
+import subtitles
 from sound import get_sound_files, parse_sound_payload, sounds, SOUNDS_FOLDER
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -105,11 +106,13 @@ def overlay_script_opts():
     return opts
 
 
-def mpv_video_args(clock=True):
+def mpv_video_args(clock=True, subs=False):
     # --quiet: 진행 상태 줄은 숨기고 경고/오류만 출력, --osc=no·--osd-level=0: 화면 위 컨트롤/메시지 숨김
     # --sid=no·--sub-auto=no: 영상에 들어 있거나 옆에 있는 자막은 표시하지 않음 (시계는 OSD라 영향 없음)
-    args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0",
-            "--sid=no", "--sub-auto=no",
+    # subs: 자막 표시 (수동 재생). 옆의 자막 파일은 앱이 언어를 판별해서 --sub-files로 넘기므로 자동 읽기는 끔,
+    #       영상 안에 든 자막은 --slang 순서로, 맞는 언어가 없어도 있는 자막을 표시(subs-fallback)
+    sub_args = ["--sid=auto", "--sub-auto=no", "--subs-fallback=yes"] if subs else ["--sid=no", "--sub-auto=no"]
+    args = ["mpv", "--fs", "--quiet", "--no-input-terminal", "--osc=no", "--osd-level=0", *sub_args,
             f"--hwdec={MPV_HWDEC}", "--cache=yes", f"--cache-secs={MPV_CACHE_SECS}",
             f"--demuxer-max-bytes={MPV_CACHE_MB}MiB", f"--cache-pause-wait={MPV_CACHE_PAUSE_WAIT}",
             "--volume-max=200", f"--input-ipc-server={MPV_IPC_PATH}"]
@@ -143,8 +146,8 @@ def vlc_video_args(clock=True):
 
 
 VIDEO_PLAYER_ARGS = mpv_video_args() if PLAYER_BACKEND == "mpv" else vlc_video_args()
-# 수동 재생(웹 UI 라이브러리)은 시계 없이
-MANUAL_PLAYER_ARGS = mpv_video_args(clock=False) if PLAYER_BACKEND == "mpv" else vlc_video_args(clock=False)
+# 수동 재생(웹 UI 라이브러리)은 시계 없이, 자막 표시
+MANUAL_PLAYER_ARGS = mpv_video_args(clock=False, subs=True) if PLAYER_BACKEND == "mpv" else vlc_video_args(clock=False)
 
 # MQTT 토픽
 TOPIC_AVAILABILITY = "cvlc_tv/availability"
@@ -250,6 +253,7 @@ config = {
     "archive_folder": os.environ.get("ARCHIVE_FOLDER", ""),
     "archive_mode": "manual",     # 라이브 녹화: off(안 함), manual(버튼으로), auto(라이브를 틀면 바로)
     "archive_from_start": True,   # 녹화를 방송 처음부터 (끄면 누른 시점부터)
+    "sub_langs": "ko,ja,en",      # 수동 재생 자막 언어 순서 (ko 한국어, ja 일본어, en 영어)
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
     "ytdlp": dict(downloader.DEFAULT_SETTINGS),
@@ -400,6 +404,7 @@ PLAY_MODES = {"random": "랜덤 재생", "list": "자동 재생 목록", "manual
 # generation: 재생을 새로 시작하거나 멈출 때마다 1씩 늘어남 (라이브 다시 연결이 옛 재생에 끼어들지 않게)
 now_playing = {"mode": None, "source": None, "stream": None, "generation": 0}
 now_lock = threading.Lock()
+now_subs = {}  # 수동 재생 중 넘긴 자막 파일 → 표시 이름 ("한국어 (srt)")
 
 
 def set_now_playing(mode, source, stream_info=None):
@@ -416,7 +421,7 @@ def stop_playback():
 PLAYBACK_PROPERTIES = ["media-title", "path", "time-pos", "duration", "pause", "chapter", "chapter-list",
                        "playlist-pos", "playlist-count", "width", "height", "video-codec", "hwdec-current",
                        "volume", "demuxer-cache-time", "container-fps", "estimated-vf-fps",
-                       "user-data/live/margin"]
+                       "user-data/live/margin", "track-list", "sid"]
 
 
 def playback_status():
@@ -456,7 +461,25 @@ def playback_status():
             "width": props["width"], "height": props["height"], "codec": props["video-codec"],
             "hwdec": props["hwdec-current"], "volume": props["volume"],
             "file": "" if status["is_stream"] else os.path.basename(props["path"] or ""),
-            "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency}
+            "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency,
+            "subs": subtitle_tracks(props["track-list"]), "sid": props["sid"]}
+
+
+def subtitle_tracks(track_list):
+    """재생 중인 영상의 자막 목록 [{"id", "label"}]"""
+    tracks = []
+    for track in track_list or []:
+        if track.get("type") != "sub":
+            continue
+        external = track.get("external-filename")
+        label = now_subs.get(os.path.realpath(external)) if external else None
+        if not label:
+            # 영상 안에 든 자막: 언어 표기(kor, jpn 등)를 이름으로
+            lang = track.get("lang") or ""
+            name = subtitles.LANG_NAMES.get(subtitles.code(lang), lang)
+            label = " · ".join(x for x in (name, track.get("title"), track.get("codec")) if x) or f"자막 {track['id']}"
+        tracks.append({"id": track["id"], "label": label})
+    return tracks
 
 
 def playback_control(action, value=None):
@@ -476,6 +499,8 @@ def playback_control(action, value=None):
             command = ["playlist-next", "force"]
         elif action == "prev":
             command = ["playlist-prev", "force"]
+        elif action == "sub":
+            command = ["set_property", "sid", "no" if value in (None, "", "no") else int(value)]
         elif action == "live_edge":
             command = ["script-message", "live-edge"]
         elif action == "reconnect":
@@ -616,13 +641,24 @@ def is_bluray(path):
 def play_manual(path):
     """수동 재생: 영상 파일 하나, 또는 블루레이 폴더의 본편(가장 긴 타이틀)을 시계 없이 재생"""
     overlay_player.stop()
-    extra = video_volume_args()
+    order = subtitles.parse_order(config["sub_langs"])
+    extra = video_volume_args() + [f"--slang={subtitles.slang(order)}"]
     if os.path.isdir(path):
+        now_subs.clear()
         set_now_playing("bluray", path)
         # 블루레이: 암호화를 푼 리핑만 재생 가능 (메뉴 없이 타이틀 바로 재생)
         if PLAYER_BACKEND == "mpv":
             return player.play("bd://longest", extra + [f"--bluray-device={path}"], args=MANUAL_PLAYER_ARGS)
         return player.play(f"bluray://{path}", extra, args=MANUAL_PLAYER_ARGS)
+    # 같은 이름의 자막 파일을 언어 순서대로 (맨 앞 자막이 표시됨)
+    subs = subtitles.ordered(subtitles.find(path), order)
+    now_subs.clear()
+    now_subs.update({os.path.realpath(sub["path"]): subtitles.label(sub) for sub in subs})
+    extra += [f"--sub-files-append={sub['path']}" for sub in subs]
+    if subs:
+        embedded = subtitles.choose_embedded(subs, subtitles.embedded_languages(path), order)
+        if embedded:
+            extra.append(f"--sid={embedded}")
     set_now_playing("manual", path)
     return player.play(path, extra, args=MANUAL_PLAYER_ARGS)
 
@@ -859,6 +895,8 @@ def update_config():
         except OSError as e:
             return jsonify({"status": "error", "message": f"녹화 폴더를 만들 수 없습니다: {archive} ({e})"}), 400
     config.update(folders, archive_folder=archive)
+    if "sub_langs" in data:
+        config["sub_langs"] = ",".join(subtitles.parse_order(data["sub_langs"]))
     save_config()
     return jsonify({"status": "success", "config": config})
 
