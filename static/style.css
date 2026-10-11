@@ -467,3 +467,17 @@ main.single {
         color: #fb923c;
     }
 }
+
+/* 라이브 상태 */
+.live-state {
+    margin: 4px 0 8px;
+    font-weight: 600;
+}
+
+.live-badge {
+    color: var(--danger);
+}
+
+.live-state .rec {
+    color: var(--danger);
+}

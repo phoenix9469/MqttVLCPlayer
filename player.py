@@ -114,5 +114,10 @@ class Player:
             process.wait()
 
     @property
+    def process(self):
+        """지금 재생기 프로세스 (끝났는지 지켜볼 때)"""
+        return self._process
+
+    @property
     def playing(self):
         return self._process is not None and self._process.poll() is None

@@ -23,12 +23,18 @@
         <h2>재생 중 <span class="chip" id="now-mode"></span></h2>
         <p class="now-title" id="now-title"></p>
         <p class="hint" id="now-info"></p>
-        <div class="seekbar">
+        <p class="live-state" id="now-live" hidden></p>
+        <div class="seekbar" id="now-seekbar">
             <span id="now-pos">0:00</span>
             <input type="range" id="now-seek" min="0" max="0" step="1" value="0" aria-label="재생 위치">
             <span id="now-dur">0:00</span>
         </div>
-        <div class="transport">
+        <div class="transport" id="now-live-buttons" hidden>
+            <button class="btn" data-action="live_edge">실시간으로</button>
+            <button class="btn secondary" data-action="reconnect">다시 연결</button>
+            <button class="btn secondary" id="now-archive">녹화 시작</button>
+        </div>
+        <div class="transport" id="now-transport">
             <button class="btn secondary" data-seek="-10" title="10초 뒤로">« 10</button>
             <button class="btn secondary" data-seek="-5" title="5초 뒤로">‹ 5</button>
             <button class="btn" id="now-pause">일시정지</button>
@@ -44,6 +50,17 @@
             <ol class="chapters" id="now-chapters"></ol>
         </details>
         <p class="hint" id="now-unsupported" hidden>VLC로 재생 중이라 정보와 제어를 쓸 수 없습니다 (mpv만 지원).</p>
+    </section>
+
+    <!-- 링크 재생: 유튜브 등 (라이브는 항상 실시간, 녹화 가능) -->
+    <section class="card">
+        <h2>링크 재생</h2>
+        <div class="row">
+            <div class="field"><input type="text" id="stream-url" placeholder="유튜브 링크 또는 youtube.com/@채널/live" aria-label="링크"></div>
+            <button class="btn" id="stream-play">재생</button>
+        </div>
+        <p class="hint" id="stream-status">최고 화질로 전체 화면 재생합니다. 라이브는 항상 맨 앞(실시간)을 유지합니다.</p>
+        <ul class="jobs" id="archives" hidden></ul>
     </section>
 
     <!-- 제어 -->
@@ -318,14 +335,29 @@
                 }
                 document.getElementById('now-title').textContent = data.title || data.file || '';
                 const info = [];
+                if (data.channel) info.push(data.channel);
+                if (data.is_live && data.viewers != null) info.push(`시청자 ${Number(data.viewers).toLocaleString()}명`);
                 if (data.is_playlist && data.playlist_count) info.push(`${data.playlist_pos + 1} / ${data.playlist_count}번째`);
-                if (data.width) info.push(`${data.width}×${data.height}`);
+                if (data.width) info.push(`${data.width}×${data.height}` + (data.fps ? ` ${Math.round(data.fps)}fps` : ''));
                 if (data.codec) info.push(data.codec.split(' ')[0]);
                 info.push(data.hwdec && data.hwdec !== 'no' ? `하드웨어 디코딩(${data.hwdec})` : 'CPU 디코딩');
                 if (data.volume != null) info.push(`음량 ${Math.round(data.volume)}`);
                 if (data.file && data.file !== data.title) info.push(data.file);
                 document.getElementById('now-info').textContent = info.join(' · ');
 
+                // 라이브: 위치 막대와 앞뒤 이동 대신 실시간 상태와 실시간/다시 연결/녹화 버튼
+                document.getElementById('now-seekbar').hidden = !!data.is_live;
+                document.getElementById('now-transport').querySelectorAll('[data-seek]').forEach(b => b.hidden = !!data.is_live);
+                document.getElementById('now-live-buttons').hidden = !data.is_live;
+                const live = document.getElementById('now-live');
+                live.hidden = !data.is_live;
+                if (data.is_live) {
+                    const late = data.latency == null ? '' : data.latency < 3 ? ' · 실시간' : ` · 받은 장면보다 ${Math.round(data.latency)}초 늦음`;
+                    live.innerHTML = `<span class="live-badge">● LIVE</span>${late}` + (data.archive ? ' · <span class="rec">녹화 중</span>' : '');
+                    const archive = document.getElementById('now-archive');
+                    archive.textContent = data.archive ? '녹화 중지' : '녹화 시작';
+                    archive.dataset.job = data.archive || '';
+                }
                 const seek = document.getElementById('now-seek');
                 seek.max = Math.floor(data.duration || 0);
                 if (!seeking) seek.value = Math.floor(data.position || 0);
@@ -371,6 +403,74 @@
             button.addEventListener('click', () => control(button.dataset.action));
         });
         document.getElementById('now-pause').addEventListener('click', () => control('pause'));
+
+        // 링크 재생과 라이브 녹화
+        function formatSize(bytes) {
+            if (!bytes) return '0MB';
+            return bytes >= 1024 ** 3 ? (bytes / 1024 ** 3).toFixed(2) + 'GB' : Math.round(bytes / 1024 ** 2) + 'MB';
+        }
+
+        let archiveTimer = null;
+        function refreshArchives() {
+            clearTimeout(archiveTimer);
+            fetch('/stream/archives').then(r => r.json()).then(data => {
+                const list = document.getElementById('archives');
+                list.innerHTML = '';
+                let active = false;
+                data.jobs.forEach(job => {
+                    const running = job.status === '녹화 중' || job.status === '멈추는 중';
+                    active = active || running;
+                    const item = document.createElement('li');
+                    let state = `${escapeHtml(job.status)} · ${formatTime(job.seconds)} · ${formatSize(job.size)}`;
+                    if (job.error) state += `<br><span class="hint">${escapeHtml(job.error)}</span>`;
+                    if (job.file) state += `<br><span class="hint">${escapeHtml(job.file)}</span>`;
+                    item.innerHTML = `<div class="info"><strong>🔴 ${escapeHtml(job.title || job.url)}</strong><br>${state}</div>` +
+                        (job.status === '녹화 중' ? `<button data-stop="${job.id}">중지</button>` : '');
+                    list.appendChild(item);
+                });
+                list.hidden = data.jobs.length === 0;
+                list.querySelectorAll('button[data-stop]').forEach(button => {
+                    button.addEventListener('click', () => {
+                        fetch('/stream/archive/stop/' + button.dataset.stop, { method: 'POST' }).then(refreshArchives);
+                    });
+                });
+                if (active) archiveTimer = setTimeout(refreshArchives, 3000);
+            }).catch(error => console.error("녹화 목록 오류:", error));
+        }
+        refreshArchives();
+
+        document.getElementById('stream-play').addEventListener('click', function() {
+            const input = document.getElementById('stream-url');
+            const status = document.getElementById('stream-status');
+            const button = this;
+            button.disabled = true;
+            status.textContent = '링크 정보를 확인하는 중…';
+            fetch('/stream/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: input.value })
+            })
+            .then(r => r.json())
+            .then(data => {
+                status.textContent = data.status === 'success'
+                    ? `${data.live ? '🔴 라이브' : '▶ 재생'}: ${data.title || input.value}`
+                    : (data.message || '재생하지 못했습니다. 링크를 확인하세요.');
+                if (data.status === 'success') setTimeout(refreshNow, 1500);
+            })
+            .catch(() => { status.textContent = '재생하지 못했습니다.'; })
+            .finally(() => { button.disabled = false; });
+        });
+        document.getElementById('stream-url').addEventListener('keydown', event => {
+            if (event.key === 'Enter') document.getElementById('stream-play').click();
+        });
+
+        document.getElementById('now-archive').addEventListener('click', function() {
+            const job = this.dataset.job;
+            const request = job ? fetch('/stream/archive/stop/' + job, { method: 'POST' })
+                                : fetch('/stream/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                                    .then(r => r.json()).then(data => { if (data.status !== 'success') alert(data.message || '녹화를 시작하지 못했습니다.'); });
+            request.then(() => { refreshNow(); setTimeout(refreshArchives, 500); });
+        });
         const nowSeek = document.getElementById('now-seek');
         nowSeek.addEventListener('input', () => {
             seeking = true;

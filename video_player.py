@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import paho.mqtt.client as mqtt
@@ -21,6 +22,7 @@ import media_info
 import tts
 from player import PLAYER_BACKEND, Player
 import sound
+import stream
 from sound import get_sound_files, parse_sound_payload, sounds, SOUNDS_FOLDER
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -66,6 +68,7 @@ MPV_EXTRA_ARGS = shlex.split(os.environ.get("MPV_EXTRA_ARGS", ""))
 MPV_CLOCK_SCRIPT = os.path.join(BASE_DIR, "mpv", "clock.lua")
 MPV_LOUDNESS_SCRIPT = os.path.join(BASE_DIR, "mpv", "loudness.lua")
 MPV_OVERLAY_SCRIPT = os.path.join(BASE_DIR, "mpv", "overlay.lua")
+MPV_LIVE_SCRIPT = os.path.join(BASE_DIR, "mpv", "live.lua")
 # 화면 알림창: 기본 표시 시간(초), 위치, 배경 불투명도(0~1), 글꼴(비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴)
 OVERLAY_DURATION = float(os.environ.get("OVERLAY_DURATION", "15"))
 OVERLAY_POSITION = os.environ.get("OVERLAY_POSITION", "bottom-right")
@@ -388,17 +391,27 @@ def hide_overlay(note_id=""):
 # 재생 중인 영상 정보와 제어 (웹 UI, mpv IPC)
 # ---------------------------------------------------------------------------
 
-PLAY_MODES = {"random": "랜덤 재생", "list": "자동 재생 목록", "manual": "수동 재생", "bluray": "블루레이"}
-now_playing = {"mode": None, "source": None}
+PLAY_MODES = {"random": "랜덤 재생", "list": "자동 재생 목록", "manual": "수동 재생", "bluray": "블루레이",
+              "stream": "링크 재생", "live": "라이브"}
+# generation: 재생을 새로 시작하거나 멈출 때마다 1씩 늘어남 (라이브 다시 연결이 옛 재생에 끼어들지 않게)
+now_playing = {"mode": None, "source": None, "stream": None, "generation": 0}
+now_lock = threading.Lock()
 
 
-def set_now_playing(mode, source):
-    now_playing.update(mode=mode, source=source)
+def set_now_playing(mode, source, stream_info=None):
+    with now_lock:
+        now_playing.update(mode=mode, source=source, stream=stream_info, generation=now_playing["generation"] + 1)
+        return now_playing["generation"]
+
+
+def stop_playback():
+    set_now_playing(None, None)
+    player.stop()
 
 
 PLAYBACK_PROPERTIES = ["media-title", "path", "time-pos", "duration", "pause", "chapter", "chapter-list",
                        "playlist-pos", "playlist-count", "width", "height", "video-codec", "hwdec-current",
-                       "volume"]
+                       "volume", "demuxer-cache-time", "container-fps", "estimated-vf-fps"]
 
 
 def playback_status():
@@ -406,8 +419,12 @@ def playback_status():
     if not player.playing:
         return {"playing": False}
     mode = now_playing["mode"]
+    info = now_playing["stream"] or {}
     status = {"playing": True, "mode": PLAY_MODES.get(mode, ""), "is_playlist": mode == "random",
-              "source": os.path.basename(now_playing["source"] or "")}
+              "source": info.get("title") or os.path.basename(now_playing["source"] or ""),
+              "is_stream": mode in ("stream", "live"), "is_live": mode == "live",
+              "channel": info.get("channel", ""), "viewers": info.get("viewers"), "url": info.get("url", ""),
+              "archive": archiver.recording(info.get("url")) if mode == "live" else None}
     if PLAYER_BACKEND != "mpv":
         return {**status, "supported": False}
     props = player.mpv_get(MPV_IPC_PATH, PLAYBACK_PROPERTIES)
@@ -416,16 +433,22 @@ def playback_status():
     chapters = [{"title": c.get("title") or f"챕터 {i + 1}", "time": c.get("time", 0)}
                 for i, c in enumerate(props["chapter-list"] or [])]
     title = props["media-title"] or os.path.basename(props["path"] or "")
-    if mode == "bluray":
-        # 블루레이는 media-title이 비어 있거나 bd://로 나오므로 폴더 이름을 제목으로
+    if mode == "bluray" or (status["is_stream"] and info.get("title")):
+        # 블루레이는 media-title이 비어 있거나 bd://로 나오므로 폴더 이름, 링크는 미리 읽은 제목
         title = status["source"]
+    latency = None
+    if mode == "live" and props["demuxer-cache-time"] is not None and props["time-pos"] is not None:
+        # 받아 둔 분량의 끝과 지금 위치의 차이 = 받을 수 있는 가장 최근 장면보다 늦은 정도
+        latency = max(0.0, props["demuxer-cache-time"] - props["time-pos"])
     return {**status, "supported": True, "ready": True,
-            "title": title, "file": os.path.basename(props["path"] or ""),
+            "title": title,
             "position": props["time-pos"], "duration": props["duration"], "paused": bool(props["pause"]),
             "chapter": props["chapter"], "chapters": chapters,
             "playlist_pos": props["playlist-pos"], "playlist_count": props["playlist-count"],
             "width": props["width"], "height": props["height"], "codec": props["video-codec"],
-            "hwdec": props["hwdec-current"], "volume": props["volume"]}
+            "hwdec": props["hwdec-current"], "volume": props["volume"],
+            "file": "" if status["is_stream"] else os.path.basename(props["path"] or ""),
+            "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency}
 
 
 def playback_control(action, value=None):
@@ -445,11 +468,72 @@ def playback_control(action, value=None):
             command = ["playlist-next", "force"]
         elif action == "prev":
             command = ["playlist-prev", "force"]
+        elif action == "live_edge":
+            command = ["script-message", "live-edge"]
+        elif action == "reconnect":
+            return now_playing["mode"] in ("stream", "live") and play_stream(now_playing["source"])
         else:
             return False
     except (TypeError, ValueError):
         return False
     return player.mpv_command(MPV_IPC_PATH, *command)
+
+
+# ---------------------------------------------------------------------------
+# 링크 재생 (유튜브 등, 라이브 포함)
+# ---------------------------------------------------------------------------
+
+archiver = stream.Archiver(lambda: config["ytdlp"], lambda: config["library_folder"])
+STREAM_RETRIES = 5
+
+
+def play_stream(url, retry=0):
+    """링크를 최고 화질로 시계 없이 재생. 라이브면 항상 맨 앞을 유지하고, 끊기면 다시 연결"""
+    url = str(url).strip()
+    if not url.startswith(("http://", "https://")):
+        return False
+    if PLAYER_BACKEND != "mpv":
+        log.warning("Link playback needs mpv (VIDEO_PLAYER=mpv)")
+        return False
+    overlay_player.stop()
+    info = stream.probe(url, config["ytdlp"]) or {"title": "", "channel": "", "is_live": False, "url": url}
+    live = info["is_live"]
+    generation = set_now_playing("live" if live else "stream", url, info)
+    args = MANUAL_PLAYER_ARGS + stream.mpv_args(config["ytdlp"])
+    if live:
+        args.append(f"--script={MPV_LIVE_SCRIPT}")
+    if not player.play(url, video_volume_args(), args=args):
+        return False
+    if live:
+        threading.Thread(target=watch_live, args=(url, generation, retry), daemon=True).start()
+    return True
+
+
+def watch_live(url, generation, retry):
+    """라이브 재생이 끊기면 방송이 계속되는 동안 다시 연결. 시청자 수도 1분마다 갱신"""
+    process = player.process
+    last_probe = time.time()
+    while process and process.poll() is None:
+        time.sleep(2)
+        if now_playing["generation"] != generation:
+            return
+        if time.time() - last_probe > 60:
+            last_probe = time.time()
+            info = stream.probe(url, config["ytdlp"])
+            if info and now_playing["generation"] == generation:
+                now_playing["stream"] = info
+    if now_playing["generation"] != generation:
+        return  # 사용자가 멈췄거나 다른 영상을 틀었음
+    info = stream.probe(url, config["ytdlp"])
+    if info and info["is_live"] and retry < STREAM_RETRIES:
+        log.info("Live stream dropped, reconnecting (%d/%d): %s", retry + 1, STREAM_RETRIES, url)
+        time.sleep(3)
+        if now_playing["generation"] == generation:
+            play_stream(url, retry + 1)
+        return
+    set_now_playing(None, None)
+    show_overlay(json.dumps({"title": "📺 방송 종료", "message": (info or {}).get("title") or url,
+                             "color": "#95a5a6", "duration": 10}, ensure_ascii=False))
 
 
 def is_bluray(path):
@@ -625,7 +709,7 @@ def handle_message(topic, payload):
     elif topic == TOPIC_PLAY:
         play_random()
     elif topic == TOPIC_STOP:
-        player.stop()
+        stop_playback()
     elif topic == TOPIC_SOUND_PLAY:
         name, opts = parse_sound_payload(payload, "file")
         sounds.play(name.strip(), opts.get("volume"))
@@ -744,7 +828,7 @@ def play_now():
 @app.route("/stop_video", methods=["POST"])
 def stop_video():
     """영상 종료"""
-    player.stop()
+    stop_playback()
     return result(True)
 
 
@@ -891,6 +975,44 @@ def playback_control_route():
     return result(playback_control(str(data.get("action", "")), data.get("value")))
 
 
+@app.route("/stream/play", methods=["POST"])
+def stream_play():
+    """링크 재생. body: {"url": "https://..."}"""
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url", "")).strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"status": "error", "message": "http:// 또는 https:// 로 시작하는 링크를 입력하세요."}), 400
+    ok = play_stream(url)
+    info = now_playing["stream"] or {}
+    return jsonify({"status": "success" if ok else "error", "live": now_playing["mode"] == "live",
+                    "title": info.get("title", "")}), 200 if ok else 500
+
+
+@app.route("/stream/archive", methods=["POST"])
+def stream_archive():
+    """라이브 녹화 시작. body: {"url": ...} 없으면 지금 재생 중인 라이브"""
+    data = request.get_json(silent=True) or {}
+    info = now_playing["stream"] or {}
+    url = str(data.get("url") or info.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"status": "error", "message": "녹화할 라이브가 없습니다."}), 400
+    try:
+        job_id = archiver.start(url, info.get("title", "") if url == info.get("url") else "")
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    return jsonify({"status": "success", "id": job_id})
+
+
+@app.route("/stream/archive/stop/<int:job_id>", methods=["POST"])
+def stream_archive_stop(job_id):
+    return result(archiver.stop(job_id))
+
+
+@app.route("/stream/archives")
+def stream_archives():
+    return jsonify({"jobs": archiver.jobs(), "folder": archiver.folder()})
+
+
 @app.route("/library")
 def library():
     """수동 재생 폴더 탐색 (path: 수동 재생 폴더 기준 상대 경로)"""
@@ -942,6 +1064,7 @@ def cleanup():
     stop_event.set()
     player.stop()
     overlay_player.stop()
+    archiver.stop_all()
     sounds.stop()
     try:
         client.publish(TOPIC_AVAILABILITY, "offline", retain=True).wait_for_publish(timeout=2)
