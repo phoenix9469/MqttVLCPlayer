@@ -481,3 +481,12 @@ main.single {
 .live-state .rec {
     color: var(--danger);
 }
+
+/* 기본 자막 모양: 크기·색·테두리·위치를 한 줄에 */
+.sub-style { gap: 12px; flex-wrap: wrap; align-items: center; }
+.sub-style label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: normal; }
+.sub-style select { width: auto; }
+.sub-style input[type=color] { width: 44px; height: 32px; padding: 2px; }
+.sub-style input[type=range] { width: 140px; }
+#now-subs-box { flex-wrap: wrap; gap: 8px; align-items: center; }
+#now-subs-box select { width: auto; flex: 1 1 160px; }

@@ -48,6 +48,12 @@
         <div class="row" id="now-subs-box" hidden>
             <label for="now-subs">자막</label>
             <select id="now-subs" aria-label="자막"></select>
+            <button class="btn secondary" data-action="sub_pos" data-value="-5" title="자막 위로">▲</button>
+            <button class="btn secondary" data-action="sub_pos" data-value="5" title="자막 아래로">▼</button>
+            <button class="btn secondary" data-action="sub_scale" data-value="0.9" title="자막 작게">가-</button>
+            <button class="btn secondary" data-action="sub_scale" data-value="1.1" title="자막 크게">가+</button>
+            <button class="btn secondary" data-action="sub_reset" title="자막 위치·크기 처음대로">↺</button>
+            <span class="hint" id="now-sub-style"></span>
         </div>
         <details id="now-chapters-box" open hidden>
             <summary id="now-chapters-summary">챕터</summary>
@@ -292,6 +298,30 @@
                 </select>
                 <span class="hint">영상과 같은 이름의 자막 파일(srt, ass, smi, vtt 등)을 내용으로 언어를 판별해서 앞 순서 자막을 표시합니다. 재생 중에 바꿀 수도 있습니다.</span>
             </div>
+            <div class="form-group">
+                <label>기본 자막 모양</label>
+                <div class="row sub-style">
+                    <label>크기
+                        <select name="sub_font_size">
+                            {% for size, name in [(34, '작게'), (44, '보통'), (54, '크게'), (66, '아주 크게')] %}
+                            <option value="{{ size }}" {% if config['sub_font_size'] == size %}selected{% endif %}>{{ name }}</option>
+                            {% endfor %}
+                            {% if config['sub_font_size'] not in [34, 44, 54, 66] %}<option value="{{ config['sub_font_size'] }}" selected>{{ config['sub_font_size'] }}</option>{% endif %}
+                        </select>
+                    </label>
+                    <label>색 <input type="color" name="sub_color" value="{{ config['sub_color'] }}"></label>
+                    <label>테두리
+                        <select name="sub_border">
+                            {% for size, name in [(0, '없음'), (2, '얇게'), (3, '보통'), (5, '굵게')] %}
+                            <option value="{{ size }}" {% if config['sub_border'] == size %}selected{% endif %}>{{ name }}</option>
+                            {% endfor %}
+                            {% if config['sub_border'] not in [0, 2, 3, 5] %}<option value="{{ config['sub_border'] }}" selected>{{ config['sub_border'] }}</option>{% endif %}
+                        </select>
+                    </label>
+                    <label>위치 <input type="range" name="sub_pos" min="50" max="100" step="1" value="{{ config['sub_pos'] }}" aria-label="자막 세로 위치 (오른쪽 끝이 맨 아래)"></label>
+                </div>
+                <span class="hint">글자 모양은 스타일이 없는 자막(srt, smi, vtt)에만 적용되고, ass/ssa 자막은 파일에 정해진 색과 위치 그대로 나옵니다. 위치는 오른쪽 끝이 맨 아래입니다. 재생 중이면 저장하자마자 바뀝니다.</span>
+            </div>
             <div class="actions">
                 <button type="submit" class="btn">설정 저장</button>
             </div>
@@ -311,7 +341,9 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder'),
-                                       archive_folder: formData.get('archive_folder'), sub_langs: formData.get('sub_langs') })
+                                       archive_folder: formData.get('archive_folder'), sub_langs: formData.get('sub_langs'),
+                                       sub_font_size: formData.get('sub_font_size'), sub_color: formData.get('sub_color'),
+                                       sub_border: formData.get('sub_border'), sub_pos: formData.get('sub_pos') })
             })
             .then(response => response.json())
             .then(data => {
@@ -408,6 +440,8 @@
                         subs.map(s => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join('');
                 }
                 if (document.activeElement !== subSelect) subSelect.value = data.sid ? String(data.sid) : 'no';
+                document.getElementById('now-sub-style').textContent = data.sub_pos == null ? '' :
+                    `위치 ${Math.round(data.sub_pos)} · 크기 ${Math.round((data.sub_scale || 1) * 100)}%`;
 
                 // 챕터: 블루레이 등 챕터가 있을 때만
                 const box = document.getElementById('now-chapters-box');
@@ -447,7 +481,7 @@
             button.addEventListener('click', () => control('seek', Number(button.dataset.seek)));
         });
         document.querySelectorAll('#now [data-action]').forEach(button => {
-            button.addEventListener('click', () => control(button.dataset.action));
+            button.addEventListener('click', () => control(button.dataset.action, button.dataset.value));
         });
         document.getElementById('now-pause').addEventListener('click', () => control('pause'));
 

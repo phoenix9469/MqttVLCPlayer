@@ -254,6 +254,11 @@ config = {
     "archive_mode": "manual",     # 라이브 녹화: off(안 함), manual(버튼으로), auto(라이브를 틀면 바로)
     "archive_from_start": True,   # 녹화를 방송 처음부터 (끄면 누른 시점부터)
     "sub_langs": "ko,ja,en",      # 수동 재생 자막 언어 순서 (ko 한국어, ja 일본어, en 영어)
+    # 기본 자막 모양: 스타일이 없는 자막(srt, smi, vtt 등)에만 적용, ass/ssa는 파일의 디자인 그대로
+    "sub_font_size": 44,          # 글자 크기 (mpv 기준, 화면 높이 720 기준 픽셀)
+    "sub_color": "#FFFFFF",       # 글자 색
+    "sub_border": 3,              # 테두리 두께
+    "sub_pos": 100,               # 세로 위치 (100 = 맨 아래, 작을수록 위로)
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
     "ytdlp": dict(downloader.DEFAULT_SETTINGS),
@@ -272,6 +277,29 @@ except ValueError as e:
 def save_config():
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f)
+
+
+SUB_STYLE_LIMITS = {"sub_font_size": (20, 100), "sub_border": (0, 10), "sub_pos": (50, 100)}
+SUB_STYLE_PROPERTIES = {"sub_font_size": "sub-font-size", "sub_color": "sub-color",
+                        "sub_border": "sub-border-size", "sub_pos": "sub-pos"}
+
+
+def clean_sub_style(key, value):
+    """설정 값 검사: 숫자는 범위 안으로, 색은 #RRGGBB. 잘못되면 None"""
+    if key == "sub_color":
+        value = str(value).strip().upper()
+        return value if re.fullmatch(r"#[0-9A-F]{6}", value) else None
+    low, high = SUB_STYLE_LIMITS[key]
+    try:
+        value = min(high, max(low, round(float(value), 1)))
+    except (TypeError, ValueError):
+        return None
+    return int(value) if value == int(value) else value
+
+
+def sub_style_args():
+    """기본 자막 모양 mpv 옵션 (스타일이 없는 자막에만 적용됨)"""
+    return [f"--{prop}={config[key]}" for key, prop in SUB_STYLE_PROPERTIES.items()]
 
 
 def video_volume_args():
@@ -421,7 +449,8 @@ def stop_playback():
 PLAYBACK_PROPERTIES = ["media-title", "path", "time-pos", "duration", "pause", "chapter", "chapter-list",
                        "playlist-pos", "playlist-count", "width", "height", "video-codec", "hwdec-current",
                        "volume", "demuxer-cache-time", "container-fps", "estimated-vf-fps",
-                       "user-data/live/margin", "track-list", "sid"]
+                       "user-data/live/margin", "track-list", "sid",
+                       "sub-pos", "sub-scale"]
 
 
 def playback_status():
@@ -462,7 +491,8 @@ def playback_status():
             "hwdec": props["hwdec-current"], "volume": props["volume"],
             "file": "" if status["is_stream"] else os.path.basename(props["path"] or ""),
             "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency,
-            "subs": subtitle_tracks(props["track-list"]), "sid": props["sid"]}
+            "subs": subtitle_tracks(props["track-list"]), "sid": props["sid"],
+            "sub_pos": props["sub-pos"], "sub_scale": props["sub-scale"]}
 
 
 def subtitle_tracks(track_list):
@@ -501,6 +531,15 @@ def playback_control(action, value=None):
             command = ["playlist-prev", "force"]
         elif action == "sub":
             command = ["set_property", "sid", "no" if value in (None, "", "no") else int(value)]
+        elif action == "sub_pos":
+            # 이번 재생에서만 자막 위/아래 (value: 더할 값, 음수면 위로)
+            command = ["add", "sub-pos", float(value)]
+        elif action == "sub_scale":
+            # 이번 재생에서만 자막 크기 배율 (ass 자막도 함께 커짐)
+            command = ["multiply", "sub-scale", float(value)]
+        elif action == "sub_reset":
+            ok = player.mpv_command(MPV_IPC_PATH, "set_property", "sub-scale", 1)
+            return player.mpv_command(MPV_IPC_PATH, "set_property", "sub-pos", config["sub_pos"]) and ok
         elif action == "live_edge":
             command = ["script-message", "live-edge"]
         elif action == "reconnect":
@@ -643,6 +682,8 @@ def play_manual(path):
     overlay_player.stop()
     order = subtitles.parse_order(config["sub_langs"])
     extra = video_volume_args() + [f"--slang={subtitles.slang(order)}"]
+    if PLAYER_BACKEND == "mpv":
+        extra += sub_style_args()
     if os.path.isdir(path):
         now_subs.clear()
         set_now_playing("bluray", path)
@@ -897,6 +938,15 @@ def update_config():
     config.update(folders, archive_folder=archive)
     if "sub_langs" in data:
         config["sub_langs"] = ",".join(subtitles.parse_order(data["sub_langs"]))
+    for key, prop in SUB_STYLE_PROPERTIES.items():
+        if key in data:
+            value = clean_sub_style(key, data[key])
+            if value is None:
+                return jsonify({"status": "error", "message": f"자막 설정 값이 잘못되었습니다: {data[key]}"}), 400
+            config[key] = value
+            # 재생 중이면 바로 보이게
+            if now_playing["mode"] in ("manual", "bluray"):
+                player.mpv_command(MPV_IPC_PATH, "set_property", prop, value, quiet=True)
     save_config()
     return jsonify({"status": "success", "config": config})
 
