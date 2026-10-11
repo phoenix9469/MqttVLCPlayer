@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "folder": "",             # 비우면 영상(NAS) 폴더
     "quality": "1080",        # best, 2160, 1440, 1080, 720, 480, audio
     "prefer_h264": True,      # 구형 GPU가 하드웨어 디코딩할 수 있는 H.264를 우선
+    "avoid_av1": False,       # AV1은 받지 않음 (AV1 하드웨어 디코딩이 없는 GPU용, VP9/H.264 중 최고 화질)
     "container": "mp4",       # mp4, mkv
     "filename": "%(title)s [%(id)s].%(ext)s",
     "playlist": False,        # 재생목록 링크면 전체를 받을지
@@ -84,7 +85,7 @@ def parse_rate(text):
         raise ValueError(f"속도 제한 형식 오류: {text} (예: 5M, 500K)") from None
 
 
-def format_selector(quality, prefer_h264):
+def format_selector(quality, prefer_h264, avoid_av1=False):
     if quality == "audio":
         return "bestaudio/best"
     limit = "" if quality == "best" else f"[height<={quality}]"
@@ -92,6 +93,9 @@ def format_selector(quality, prefer_h264):
     if prefer_h264:
         # avc1 = H.264. 없으면 아래의 일반 선택으로 넘어감
         choices += [f"bv*{limit}[vcodec^=avc1]+ba[ext=m4a]", f"bv*{limit}[vcodec^=avc1]+ba", f"b{limit}[vcodec^=avc1]"]
+    if avoid_av1:
+        # av01 = AV1. AV1이 아닌 것(VP9, H.264) 중 최고 화질, 그런 형식이 없을 때만 아래의 일반 선택(AV1 포함)
+        choices += [f"bv*{limit}[vcodec!^=av01]+ba", f"b{limit}[vcodec!^=av01]"]
     choices += [f"bv*{limit}+ba", f"b{limit}", "bv*+ba/b"]
     return "/".join(choices)
 
@@ -101,7 +105,7 @@ def build_options(settings, folder, hook):
         # 받는 중인 조각 파일은 숨김 폴더에 두었다가 끝나면 옮긴다 (랜덤 재생에 반쯤 받은 파일이 섞이지 않게)
         "paths": {"home": folder, "temp": os.path.join(folder, ".ytdlp-tmp")},
         "outtmpl": settings["filename"],
-        "format": format_selector(settings["quality"], settings["prefer_h264"]),
+        "format": format_selector(settings["quality"], settings["prefer_h264"], settings["avoid_av1"]),
         "noplaylist": not settings["playlist"],
         "progress_hooks": [hook],
         "quiet": True,

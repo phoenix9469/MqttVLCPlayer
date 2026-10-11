@@ -159,7 +159,8 @@
                 </div>
             </div>
             <div class="form-group">
-                <label class="check"><input type="checkbox" id="dl-h264" {% if ytdlp.prefer_h264 %}checked{% endif %}> H.264 우선 (이 노트북에서 하드웨어 디코딩 가능)</label>
+                <label class="check"><input type="checkbox" id="dl-h264" {% if ytdlp.prefer_h264 %}checked{% endif %}> H.264 우선 (구형 GPU용, 유튜브는 1080p까지만 있음)</label>
+                <label class="check"><input type="checkbox" id="dl-av1" {% if ytdlp.avoid_av1 %}checked{% endif %}> AV1 제외 (VP9/H.264 중 최고 화질, AV1 하드웨어 디코딩이 없는 기기용)</label>
                 <label class="check"><input type="checkbox" id="dl-playlist" {% if ytdlp.playlist %}checked{% endif %}> 재생목록 링크면 전체 받기</label>
                 <label class="check"><input type="checkbox" id="dl-metadata" {% if ytdlp.embed_metadata %}checked{% endif %}> 제목·설명 등 정보 기록</label>
                 <label class="check"><input type="checkbox" id="dl-thumbnail" {% if ytdlp.embed_thumbnail %}checked{% endif %}> 썸네일 넣기</label>
@@ -462,7 +463,7 @@
                         folder: value('dl-folder'), quality: value('dl-default-quality'),
                         container: value('dl-container'), filename: value('dl-filename'),
                         rate_limit: value('dl-rate'), cookies: value('dl-cookies'), extra: value('dl-extra'),
-                        prefer_h264: checked('dl-h264'), playlist: checked('dl-playlist'),
+                        prefer_h264: checked('dl-h264'), avoid_av1: checked('dl-av1'), playlist: checked('dl-playlist'),
                         embed_metadata: checked('dl-metadata'), embed_thumbnail: checked('dl-thumbnail')
                     })
                 })
