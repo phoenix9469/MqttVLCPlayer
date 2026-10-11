@@ -72,13 +72,63 @@ def probe(url, settings):
     }
 
 
+# mpv가 바로 열 수 있는 형식 (그 밖의 것, 예: 조각 목록인 DASH는 mpv의 yt-dlp 연동에 맡김)
+DIRECT_PROTOCOLS = ("https", "http", "m3u8", "m3u8_native")
+
+
+def _edl_part(url):
+    return f"!no_clip;!no_chapters;%{len(url.encode())}%{url}"
+
+
+def resolve(url, settings):
+    """링크를 한 번만 읽어서 재생 정보와 실제 스트림 주소를 얻는다 (앱에 이미 불러온 yt-dlp 사용).
+    mpv에 맡기면 mpv가 먼저 페이지를 영상으로 열어 보다 실패한 뒤 yt-dlp를 따로 실행해서 느리다.
+    play_url: mpv에 바로 넘길 주소 (영상·음성이 따로면 mpv EDL로 묶음), 바로 열 수 없으면 None.
+    실패하면 None"""
+    if yt_dlp is None:
+        return None
+    opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "skip_download": True,
+            "format": best_format(settings, prefer_dash=True)}
+    if settings.get("cookies"):
+        opts["cookiefile"] = settings["cookies"]
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:  # yt-dlp는 다양한 예외를 던진다
+        log.warning("Cannot resolve %s: %s", url, e)
+        return None
+    if not isinstance(info, dict) or info.get("_type") in ("playlist", "multi_video"):
+        return None
+    formats = info.get("requested_formats") or [info]
+    play_url = None
+    if all(f.get("url") and f.get("protocol") in DIRECT_PROTOCOLS for f in formats):
+        if len(formats) == 1:
+            play_url = formats[0]["url"]
+        else:
+            # mpv의 yt-dlp 연동과 같은 방식: 영상과 음성을 별도 스트림으로 묶은 EDL
+            play_url = "edl://" + ";!new_stream;".join(_edl_part(f["url"]) for f in formats)
+    headers = formats[0].get("http_headers") or info.get("http_headers") or {}
+    return {
+        "title": info.get("title") or "",
+        "channel": info.get("channel") or info.get("uploader") or "",
+        "is_live": bool(info.get("is_live")),
+        "viewers": info.get("concurrent_view_count"),
+        "url": info.get("webpage_url") or url,
+        "id": info.get("id") or "",
+        "play_url": play_url,
+        "headers": [f"{k}: {v}" for k, v in headers.items()],
+    }
+
+
 def mpv_args(settings):
     """링크 재생용 mpv 옵션"""
     # force-window: yt-dlp가 정보를 받는 동안에도 창을 바로 띄움 (불러오는 중 표시용)
     # cache-pause-wait: 시작 직후 잠깐 데이터가 늦어도 NAS용 대기(MPV_CACHE_PAUSE_WAIT)만큼 멈추지 않게
     args = ["--force-window=immediate", "--cache-pause-wait=1",
             f"--ytdl-format={best_format(settings, prefer_dash=True)}",
-            f"--script-opts-append=ytdl_hook-ytdl_path={ytdl_path()}"]
+            f"--script-opts-append=ytdl_hook-ytdl_path={ytdl_path()}",
+            # 직접 못 연 링크를 mpv의 yt-dlp 연동에 맡길 때: 페이지를 영상으로 먼저 열어 보지 말고 바로 yt-dlp
+            "--script-opts-append=ytdl_hook-try_ytdl_first=yes"]
     # 자막은 쓰지 않으므로 받지 않음 (mpv는 따로 정하지 않으면 라이브 채팅까지 모든 자막을 요청함)
     raw = ["sub-langs=-live_chat"]
     if settings.get("cookies"):

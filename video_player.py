@@ -505,15 +505,25 @@ def play_stream(url, retry=0):
         log.warning("Link playback needs mpv (VIDEO_PLAYER=mpv)")
         return False
     overlay_player.stop()
-    # mpv(내부에서 yt-dlp 실행)를 바로 띄우고, 라이브인지 등 링크 정보는 동시에 따로 읽는다
-    # (정보를 다 읽고 나서 mpv를 띄우면 yt-dlp를 두 번 기다리게 되어 시작이 느림)
     generation = set_now_playing("stream", url, {"title": "", "channel": "", "is_live": False, "url": url})
+    # 창(검은 화면 + 불러오는 중)은 바로 띄우고, 링크는 따로 한 번만 읽어서 실제 스트림 주소를 넘긴다
     args = MANUAL_PLAYER_ARGS + stream.mpv_args(config["ytdlp"])
-    if not player.play(url, video_volume_args(), args=args):
+    if not player.play("--idle=once", video_volume_args(), args=args):
         return False
+    log.info("Opening link %s", url)
     threading.Thread(target=show_loading, args=(url, generation), daemon=True).start()
-    threading.Thread(target=after_stream_probe, args=(url, generation, retry), daemon=True).start()
+    threading.Thread(target=load_stream, args=(url, generation, retry), daemon=True).start()
     return True
+
+
+def mpv_ready(timeout=10):
+    """방금 띄운 mpv의 IPC가 준비될 때까지 대기"""
+    deadline = time.time() + timeout
+    while time.time() < deadline and player.playing:
+        if player.mpv_request(MPV_IPC_PATH, "get_property", "idle-active", quiet=True)[0]:
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def show_loading(url, generation):
@@ -534,24 +544,28 @@ def show_loading(url, generation):
         player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-hide", "loading", quiet=True)
 
 
-def after_stream_probe(url, generation, retry):
-    """링크 정보를 읽은 뒤: 제목·채널 표시, 라이브면 실시간 유지 스크립트를 넣고 자동 녹화와 끊김 감시"""
-    info = stream.probe(url, config["ytdlp"])
-    if not info or now_playing["generation"] != generation:
+def load_stream(url, generation, retry):
+    """링크를 읽어 mpv에 넘기고, 라이브면 실시간 유지 스크립트·자동 녹화·끊김 감시"""
+    info = stream.resolve(url, config["ytdlp"])
+    if now_playing["generation"] != generation or not mpv_ready():
         return
-    with now_lock:
-        now_playing["stream"] = info
-        if info["is_live"]:
-            now_playing["mode"] = "live"
-    if not info["is_live"]:
+    target = "ytdl://" + url  # 직접 열 수 없으면 mpv의 yt-dlp 연동에 맡김
+    if info:
+        with now_lock:
+            now_playing["stream"] = info
+            if info["is_live"]:
+                now_playing["mode"] = "live"
+        if info["play_url"]:
+            target = info["play_url"]
+            player.mpv_command(MPV_IPC_PATH, "set_property", "http-header-fields", info["headers"], quiet=True)
+            player.mpv_command(MPV_IPC_PATH, "set_property", "force-media-title", info["title"], quiet=True)
+    if info and info["is_live"]:
+        player.mpv_command(MPV_IPC_PATH, "load-script", MPV_LIVE_SCRIPT)
+    if not player.mpv_command(MPV_IPC_PATH, "loadfile", target, "replace"):
+        log.warning("mpv could not load %s", url)
         return
-    # 이미 떠 있는 mpv에 실시간 유지 스크립트를 넣음 (mpv가 아직 준비 중이면 잠시 기다림)
-    for _ in range(20):
-        if player.mpv_command(MPV_IPC_PATH, "load-script", MPV_LIVE_SCRIPT, quiet=True):
-            break
-        time.sleep(0.5)
-    else:
-        log.warning("Cannot load %s into mpv", MPV_LIVE_SCRIPT)
+    if not info or not info["is_live"]:
+        return
     if config["archive_mode"] == "auto" and not archiver.recording(info["url"]):
         try:
             archiver.start(info["url"], info.get("title", ""), config["archive_from_start"])
