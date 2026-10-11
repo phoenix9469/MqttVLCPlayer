@@ -511,8 +511,27 @@ def play_stream(url, retry=0):
     args = MANUAL_PLAYER_ARGS + stream.mpv_args(config["ytdlp"])
     if not player.play(url, video_volume_args(), args=args):
         return False
+    threading.Thread(target=show_loading, args=(url, generation), daemon=True).start()
     threading.Thread(target=after_stream_probe, args=(url, generation, retry), daemon=True).start()
     return True
+
+
+def show_loading(url, generation):
+    """링크를 여는 동안 화면 가운데 "불러오는 중" 알림, 영상이 재생되기 시작하면 닫음"""
+    note = json.dumps({"id": "loading", "title": "▶ 불러오는 중", "message": url, "color": "#3498db",
+                       "position": "center", "duration": 0}, ensure_ascii=False)
+    shown = False
+    deadline = time.time() + 30
+    while time.time() < deadline and now_playing["generation"] == generation and player.playing:
+        if not shown:
+            shown = player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-show", note, quiet=True)
+        else:
+            ok, position = player.mpv_request(MPV_IPC_PATH, "get_property", "time-pos", quiet=True)
+            if ok and position is not None:
+                break
+        time.sleep(0.2)
+    if shown:
+        player.mpv_command(MPV_IPC_PATH, "script-message", "overlay-hide", "loading", quiet=True)
 
 
 def after_stream_probe(url, generation, retry):

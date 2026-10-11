@@ -74,9 +74,13 @@ def probe(url, settings):
 
 def mpv_args(settings):
     """링크 재생용 mpv 옵션"""
-    args = [f"--ytdl-format={best_format(settings, prefer_dash=True)}",
+    # force-window: yt-dlp가 정보를 받는 동안에도 창을 바로 띄움 (불러오는 중 표시용)
+    # cache-pause-wait: 시작 직후 잠깐 데이터가 늦어도 NAS용 대기(MPV_CACHE_PAUSE_WAIT)만큼 멈추지 않게
+    args = ["--force-window=immediate", "--cache-pause-wait=1",
+            f"--ytdl-format={best_format(settings, prefer_dash=True)}",
             f"--script-opts-append=ytdl_hook-ytdl_path={ytdl_path()}"]
-    raw = []
+    # 자막은 쓰지 않으므로 받지 않음 (mpv는 따로 정하지 않으면 라이브 채팅까지 모든 자막을 요청함)
+    raw = ["sub-langs=-live_chat"]
     if settings.get("cookies"):
         raw.append(f"cookies={settings['cookies']}")
     if raw:
