@@ -257,7 +257,7 @@ class Downloader:
 
 def update_ytdlp():
     """yt-dlp 최신 버전으로 업데이트 (사이트가 바뀌어 다운로드가 실패할 때). 결과 메시지 반환"""
-    result = subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]"],
+    result = subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default,curl-cffi]"],
                             capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         return False, (result.stderr or result.stdout).strip()[-500:]
