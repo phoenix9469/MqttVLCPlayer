@@ -19,13 +19,18 @@ load_env() {
 }
 
 cd "$APP_DIR" || exit 1
-PYTHON="$APP_DIR/.venv/bin/python"
-[ -x "$PYTHON" ] || PYTHON=python3
+
+# 가상환경: 환경변수 파일의 VENV_DIR (프로젝트가 NAS에 있을 때 로컬 디스크에 두면 시작이 빠름), 없으면 프로젝트의 .venv
+pick_python() {
+    local python="${VENV_DIR:-$APP_DIR/.venv}/bin/python"
+    [ -x "$python" ] || python=python3
+    echo "$python"
+}
 
 while true; do
     echo "[$(date '+%F %T')] MqttVLCPlayer 시작 ($APP_DIR, 설정: $ENV_FILE)"
     # 매번 새 하위 셸에서 설정을 읽어서, 파일에서 지운 변수가 남지 않고 바뀐 값이 반영됨
-    ( load_env; export MQTTVLCPLAYER_SUPERVISED=1; exec "$PYTHON" video_player.py )
+    ( load_env; export MQTTVLCPLAYER_SUPERVISED=1; exec "$(pick_python)" video_player.py )
     code=$?
     if [ "$code" -eq 75 ]; then
         # 웹 UI의 재시작 버튼

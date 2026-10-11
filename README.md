@@ -52,6 +52,14 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+프로젝트 폴더를 NAS에 두는 경우, 가상환경은 노트북 로컬 디스크에 만들고 환경변수 파일의 `VENV_DIR`로 지정하세요. NAS 위의 가상환경은 파이썬 모듈을 네트워크로 읽느라 앱과 yt-dlp(링크 재생) 시작이 1~2초씩 느려집니다.
+
+```bash
+python3 -m venv ~/.venvs/mqttvlcplayer
+~/.venvs/mqttvlcplayer/bin/pip install -r requirements.txt
+# /etc/mqttvlcplayer.env 에 VENV_DIR=/home/<user>/.venvs/mqttvlcplayer
+```
+
 일본어 음성 모델(약 40MB)을 미리 받아 둡니다. 받지 않으면 첫 음성 안내 때 자동으로 내려받습니다(인터넷 필요).
 
 ```bash
