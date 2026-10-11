@@ -248,7 +248,7 @@ config = {
     "library_folder": os.environ.get("LIBRARY_FOLDER", "/LL"),
     # 라이브 녹화 저장 폴더 (비우면 수동 재생 폴더 안의 "라이브 아카이브")
     "archive_folder": os.environ.get("ARCHIVE_FOLDER", ""),
-    "archive_auto": False,        # 라이브를 틀면 바로 녹화
+    "archive_mode": "manual",     # 라이브 녹화: off(안 함), manual(버튼으로), auto(라이브를 틀면 바로)
     "archive_from_start": True,   # 녹화를 방송 처음부터 (끄면 누른 시점부터)
     "video_volume": VIDEO_VOLUME,
     "sound_volume": sound.SOUND_VOLUME,
@@ -428,7 +428,8 @@ def playback_status():
               "source": info.get("title") or os.path.basename(now_playing["source"] or ""),
               "is_stream": mode in ("stream", "live"), "is_live": mode == "live",
               "channel": info.get("channel", ""), "viewers": info.get("viewers"), "url": info.get("url", ""),
-              "archive": archiver.recording(info.get("url")) if mode == "live" else None}
+              "archive": archiver.recording(info.get("url")) if mode == "live" else None,
+              "archive_enabled": config["archive_mode"] != "off"}
     if PLAYER_BACKEND != "mpv":
         return {**status, "supported": False}
     props = player.mpv_get(MPV_IPC_PATH, PLAYBACK_PROPERTIES)
@@ -512,7 +513,7 @@ def play_stream(url, retry=0):
         args.append(f"--script={MPV_LIVE_SCRIPT}")
     if not player.play(url, video_volume_args(), args=args):
         return False
-    if live and config["archive_auto"] and not archiver.recording(info["url"]):
+    if live and config["archive_mode"] == "auto" and not archiver.recording(info["url"]):
         try:
             archiver.start(info["url"], info.get("title", ""), config["archive_from_start"])
         except ValueError as e:
@@ -1011,6 +1012,8 @@ def stream_play():
 @app.route("/stream/archive", methods=["POST"])
 def stream_archive():
     """라이브 녹화 시작. body: {"url": ...} 없으면 지금 재생 중인 라이브"""
+    if config["archive_mode"] == "off":
+        return jsonify({"status": "error", "message": "녹화를 사용하지 않도록 설정되어 있습니다."}), 400
     data = request.get_json(silent=True) or {}
     info = now_playing["stream"] or {}
     url = str(data.get("url") or info.get("url") or "").strip()
@@ -1026,14 +1029,16 @@ def stream_archive():
 
 @app.route("/stream/archive/settings", methods=["POST"])
 def stream_archive_settings():
-    """녹화 선택: {"auto": 라이브를 틀면 바로 녹화, "from_start": 방송 처음부터}"""
+    """녹화 선택: {"mode": "off"(안 함) | "manual"(버튼으로) | "auto"(라이브를 틀면 바로), "from_start": 방송 처음부터}"""
     data = request.get_json(silent=True) or {}
-    if "auto" in data:
-        config["archive_auto"] = bool(data["auto"])
+    if "mode" in data:
+        if data["mode"] not in ("off", "manual", "auto"):
+            return jsonify({"status": "error", "message": f"알 수 없는 녹화 방식: {data['mode']}"}), 400
+        config["archive_mode"] = data["mode"]
     if "from_start" in data:
         config["archive_from_start"] = bool(data["from_start"])
     save_config()
-    return jsonify({"status": "success", "auto": config["archive_auto"], "from_start": config["archive_from_start"]})
+    return jsonify({"status": "success", "mode": config["archive_mode"], "from_start": config["archive_from_start"]})
 
 
 @app.route("/stream/archive/stop/<int:job_id>", methods=["POST"])

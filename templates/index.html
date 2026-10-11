@@ -61,8 +61,13 @@
         </div>
         <p class="hint" id="stream-status">최고 화질로 전체 화면 재생합니다. 라이브는 항상 맨 앞(실시간)을 유지합니다.</p>
         <div class="form-group">
-            <label class="check"><input type="checkbox" id="archive-auto" {% if config.archive_auto %}checked{% endif %}> 라이브를 틀면 바로 녹화</label>
-            <label class="check"><input type="checkbox" id="archive-from-start" {% if config.archive_from_start %}checked{% endif %}> 녹화는 방송 처음부터 (끄면 녹화를 시작한 시점부터)</label>
+            <label for="archive-mode">라이브 녹화</label>
+            <select id="archive-mode">
+                <option value="off" {% if config.archive_mode == 'off' %}selected{% endif %}>녹화하지 않음</option>
+                <option value="manual" {% if config.archive_mode == 'manual' %}selected{% endif %}>버튼을 눌렀을 때만</option>
+                <option value="auto" {% if config.archive_mode == 'auto' %}selected{% endif %}>라이브를 틀면 바로 녹화</option>
+            </select>
+            <label class="check" id="archive-from-start-row" {% if config.archive_mode == 'off' %}hidden{% endif %}><input type="checkbox" id="archive-from-start" {% if config.archive_from_start %}checked{% endif %}> 녹화는 방송 처음부터 (끄면 녹화를 시작한 시점부터)</label>
         </div>
         <ul class="jobs" id="archives" hidden></ul>
     </section>
@@ -365,6 +370,8 @@
                     const late = data.latency == null ? '' : data.latency < 3 ? ' · 실시간' : ` · 받은 장면보다 ${Math.round(data.latency)}초 늦음`;
                     live.innerHTML = `<span class="live-badge">● LIVE</span>${late}` + (data.archive ? ' · <span class="rec">녹화 중</span>' : '');
                     const archive = document.getElementById('now-archive');
+                    // 녹화하지 않음이면 버튼 숨김 (그 전에 시작한 녹화가 있으면 중지할 수 있게 보임)
+                    archive.hidden = !data.archive_enabled && !data.archive;
                     archive.textContent = data.archive ? '녹화 중지' : '녹화 시작';
                     archive.dataset.job = data.archive || '';
                 }
@@ -471,14 +478,15 @@
             .catch(() => { status.textContent = '재생하지 못했습니다.'; })
             .finally(() => { button.disabled = false; });
         });
-        ['archive-auto', 'archive-from-start'].forEach(id => {
+        ['archive-mode', 'archive-from-start'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
+                const mode = document.getElementById('archive-mode').value;
+                document.getElementById('archive-from-start-row').hidden = mode === 'off';
                 fetch('/stream/archive/settings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auto: document.getElementById('archive-auto').checked,
-                                           from_start: document.getElementById('archive-from-start').checked })
-                }).catch(error => console.error("녹화 설정 오류:", error));
+                    body: JSON.stringify({ mode: mode, from_start: document.getElementById('archive-from-start').checked })
+                }).then(refreshNow).catch(error => console.error("녹화 설정 오류:", error));
             });
         });
         document.getElementById('stream-url').addEventListener('keydown', event => {
