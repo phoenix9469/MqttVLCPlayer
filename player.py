@@ -68,14 +68,15 @@ class Player:
                     if "error" in reply:
                         break
         except (OSError, ValueError) as e:
-            if not quiet:
+            # 막 시작해서 IPC 소켓이 아직 준비되지 않은 경우는 흔하므로 경고하지 않음
+            if not quiet and not isinstance(e, (ConnectionRefusedError, FileNotFoundError)):
                 log.warning("mpv IPC %s failed: %s", command, e)
             return False, None
         return reply.get("error") == "success", reply.get("data")
 
-    def mpv_command(self, ipc_path, *command):
+    def mpv_command(self, ipc_path, *command, quiet=False):
         """재생 중인 mpv에 IPC 명령 전송, 성공 여부 반환"""
-        return self.mpv_request(ipc_path, *command)[0]
+        return self.mpv_request(ipc_path, *command, quiet=quiet)[0]
 
     def mpv_get(self, ipc_path, names):
         """재생 중인 mpv의 속성 여러 개를 한 번에 읽음. {이름: 값}, 읽지 못한 속성은 None. 연결 실패 시 None"""
@@ -103,7 +104,8 @@ class Player:
                     if reply.get("error") == "success":
                         values[names[reply["request_id"]]] = reply.get("data")
         except (OSError, ValueError, IndexError) as e:
-            log.warning("mpv IPC get %s failed: %s", names, e)
+            if not isinstance(e, (ConnectionRefusedError, FileNotFoundError)):
+                log.warning("mpv IPC get %s failed: %s", names, e)
             return None
         return values
 

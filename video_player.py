@@ -505,22 +505,40 @@ def play_stream(url, retry=0):
         log.warning("Link playback needs mpv (VIDEO_PLAYER=mpv)")
         return False
     overlay_player.stop()
-    info = stream.probe(url, config["ytdlp"]) or {"title": "", "channel": "", "is_live": False, "url": url}
-    live = info["is_live"]
-    generation = set_now_playing("live" if live else "stream", url, info)
+    # mpv(내부에서 yt-dlp 실행)를 바로 띄우고, 라이브인지 등 링크 정보는 동시에 따로 읽는다
+    # (정보를 다 읽고 나서 mpv를 띄우면 yt-dlp를 두 번 기다리게 되어 시작이 느림)
+    generation = set_now_playing("stream", url, {"title": "", "channel": "", "is_live": False, "url": url})
     args = MANUAL_PLAYER_ARGS + stream.mpv_args(config["ytdlp"])
-    if live:
-        args.append(f"--script={MPV_LIVE_SCRIPT}")
     if not player.play(url, video_volume_args(), args=args):
         return False
-    if live and config["archive_mode"] == "auto" and not archiver.recording(info["url"]):
+    threading.Thread(target=after_stream_probe, args=(url, generation, retry), daemon=True).start()
+    return True
+
+
+def after_stream_probe(url, generation, retry):
+    """링크 정보를 읽은 뒤: 제목·채널 표시, 라이브면 실시간 유지 스크립트를 넣고 자동 녹화와 끊김 감시"""
+    info = stream.probe(url, config["ytdlp"])
+    if not info or now_playing["generation"] != generation:
+        return
+    with now_lock:
+        now_playing["stream"] = info
+        if info["is_live"]:
+            now_playing["mode"] = "live"
+    if not info["is_live"]:
+        return
+    # 이미 떠 있는 mpv에 실시간 유지 스크립트를 넣음 (mpv가 아직 준비 중이면 잠시 기다림)
+    for _ in range(20):
+        if player.mpv_command(MPV_IPC_PATH, "load-script", MPV_LIVE_SCRIPT, quiet=True):
+            break
+        time.sleep(0.5)
+    else:
+        log.warning("Cannot load %s into mpv", MPV_LIVE_SCRIPT)
+    if config["archive_mode"] == "auto" and not archiver.recording(info["url"]):
         try:
             archiver.start(info["url"], info.get("title", ""), config["archive_from_start"])
         except ValueError as e:
             log.warning("Auto archive failed: %s", e)
-    if live:
-        threading.Thread(target=watch_live, args=(url, generation, retry), daemon=True).start()
-    return True
+    watch_live(url, generation, retry)
 
 
 def watch_live(url, generation, retry):

@@ -35,9 +35,16 @@ def ytdl_path():
     return local if os.access(local, os.X_OK) else (shutil.which("yt-dlp") or "yt-dlp")
 
 
-def best_format(settings):
-    """항상 최고 화질. 다운로드 설정의 H.264 우선/AV1 제외(이 기기의 하드웨어 디코딩 범위)는 따름"""
-    return downloader.format_selector("best", settings.get("prefer_h264"), settings.get("avoid_av1"))
+def best_format(settings, prefer_dash=False):
+    """항상 최고 화질. 다운로드 설정의 H.264 우선/AV1 제외(이 기기의 하드웨어 디코딩 범위)는 따름.
+    prefer_dash: 같은 조건이면 HLS(m3u8)가 아닌 형식을 먼저 고름. 유튜브 일반 영상의 HLS는 조각을 하나씩
+    받느라 시작이 느리고 연결 경고가 많다. 라이브처럼 HLS만 있으면 뒤의 원래 선택으로 넘어감"""
+    selector = downloader.format_selector("best", settings.get("prefer_h264"), settings.get("avoid_av1"))
+    if not prefer_dash:
+        return selector
+    no_hls = "/".join("+".join(part + "[protocol!*=m3u8]" for part in choice.split("+"))
+                      for choice in selector.split("/"))
+    return no_hls + "/" + selector
 
 
 def probe(url, settings):
@@ -67,7 +74,7 @@ def probe(url, settings):
 
 def mpv_args(settings):
     """링크 재생용 mpv 옵션"""
-    args = [f"--ytdl-format={best_format(settings)}",
+    args = [f"--ytdl-format={best_format(settings, prefer_dash=True)}",
             f"--script-opts-append=ytdl_hook-ytdl_path={ytdl_path()}"]
     raw = []
     if settings.get("cookies"):
