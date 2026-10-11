@@ -72,7 +72,7 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 
 ## 설정
 
-설정은 환경변수로 지정합니다. 예시는 `deploy/mqttvlcplayer.env.example`에 있습니다.
+설정은 환경변수로 지정합니다. 예시는 `deploy/mqttvlcplayer.env.example`에 있습니다. 이 파일은 셸 스크립트로 읽으므로 값에 공백이 있으면 큰따옴표로 감싸세요(예: `MPV_EXTRA_ARGS="--a --b"`).
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -91,7 +91,7 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `OVERLAY_FONT` | `CLOCK_FONT` | 화면 알림창 글꼴 이름. 비우면 시계 글꼴, 그것도 없으면 mpv 기본 글꼴 |
 | `VIDEO_PLAYER` | `mpv` | 영상과 알림 소리를 재생할 프로그램. `mpv` 또는 `vlc`(`cvlc`) |
 | `MPV_HWDEC` | `auto-safe` | mpv 하드웨어 디코딩 방식. `auto-safe`는 VA-API 등을 자동 선택, `vaapi-copy`는 화면 연결이 안 될 때, `no`는 CPU 디코딩 |
-| `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU는 `i965`. 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
+| `LIBVA_DRIVER_NAME` | 없음 | VA-API 드라이버 강제 지정. Ivy Bridge(HD 4000) 등 구형 Intel GPU만 `i965` (6세대 이후는 지정하지 말 것, 지정하면 하드웨어 디코딩이 안 됨). 재생 중 터미널에 `Using hardware decoding (vaapi)`가 나오면 하드웨어 디코딩 중 |
 | `MPV_CACHE_SECS` | `60` | mpv가 미리 읽어 둘 영상 길이(초). NAS에서 읽다가 끊기면 늘림 |
 | `MPV_CACHE_MB` | `500` | 미리 읽기에 쓸 최대 메모리(MB). 고화질 영상은 이 제한에 먼저 걸리므로 `MPV_CACHE_SECS`와 함께 늘림 |
 | `MPV_CACHE_PAUSE_WAIT` | `5` | 버퍼가 바닥나 멈췄을 때 다시 모을 시간(초) |
