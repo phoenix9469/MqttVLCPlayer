@@ -403,6 +403,7 @@
                 if (data.codec) info.push(data.codec.split(' ')[0]);
                 info.push(data.hwdec && data.hwdec !== 'no' ? `하드웨어 디코딩(${data.hwdec})` : 'CPU 디코딩');
                 if (data.volume != null) info.push(`음량 ${Math.round(data.volume)}`);
+                if (data.size) info.push(data.size >= 1024 ** 3 ? (data.size / 1024 ** 3).toFixed(1) + 'GB' : Math.round(data.size / 1024 ** 2) + 'MB');
                 if (data.file && data.file !== data.title) info.push(data.file);
                 document.getElementById('now-info').textContent = info.join(' · ');
 

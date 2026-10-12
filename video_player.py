@@ -492,7 +492,16 @@ def playback_status():
             "file": "" if status["is_stream"] else os.path.basename(props["path"] or ""),
             "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency,
             "subs": subtitle_tracks(props["track-list"]), "sid": props["sid"],
-            "sub_pos": props["sub-pos"], "sub_scale": props["sub-scale"]}
+            "sub_pos": props["sub-pos"], "sub_scale": props["sub-scale"],
+            "size": file_size(props["path"]) if not status["is_stream"] else None}
+
+
+def file_size(path):
+    """재생 중인 파일 크기(바이트). 블루레이(bd://) 등 파일이 아니면 None"""
+    try:
+        return os.path.getsize(path) if path and os.path.isfile(path) else None
+    except OSError:
+        return None
 
 
 def subtitle_tracks(track_list):

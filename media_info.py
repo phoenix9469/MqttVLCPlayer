@@ -1,4 +1,5 @@
-"""영상 코덱 정보: ffprobe로 한 번 읽어 두고 파일에 저장한다 (영상 목록에 코덱, 해상도, 하드웨어 디코딩 가능 여부 표시).
+"""영상 코덱 정보: ffprobe로 한 번 읽어 두고 파일에 저장한다 (영상 목록에 코덱, 해상도, 하드웨어 디코딩 가능 여부,
+재생 시간, 파일 크기 표시).
 
 하드웨어 디코딩 가능 여부는 vainfo가 알려 주는 VA-API 디코딩 프로필로 판단한다.
 """
@@ -80,9 +81,10 @@ def _needed_profiles(codec, profile, bits):
 
 def _probe(path):
     result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
-                             "-show_entries", "stream=codec_name,profile,pix_fmt,width,height",
+                             "-show_entries", "stream=codec_name,profile,pix_fmt,width,height:format=duration",
                              "-of", "json", path], capture_output=True, text=True, timeout=30)
-    streams = json.loads(result.stdout or "{}").get("streams") or []
+    output = json.loads(result.stdout or "{}")
+    streams = output.get("streams") or []
     if not streams:
         return None
     s = streams[0]
@@ -90,7 +92,15 @@ def _probe(path):
     match = re.search(r"p(9|10|12|14|16)", pix_fmt)
     return {"codec": s.get("codec_name") or "", "profile": s.get("profile") or "",
             "bits": int(match.group(1)) if match else 8,
-            "width": s.get("width") or 0, "height": s.get("height") or 0}
+            "width": s.get("width") or 0, "height": s.get("height") or 0,
+            "duration": _number((output.get("format") or {}).get("duration"))}
+
+
+def _number(value):
+    try:
+        return round(float(value), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def bluray_stream(folder):
@@ -114,7 +124,8 @@ def info(path):
     key = {"size": st.st_size, "mtime": int(st.st_mtime)}
     with _lock:
         entry = _load().get(path)
-    if entry and {k: entry.get(k) for k in key} == key:
+    # 재생 시간이 생기기 전에 저장한 정보는 다시 읽음
+    if entry and {k: entry.get(k) for k in key} == key and (not entry.get("info") or "duration" in entry["info"]):
         data = entry.get("info")
     else:
         try:
@@ -125,7 +136,7 @@ def info(path):
         with _lock:
             _load()[path] = {**key, "info": data}
             _dirty = True
-    return describe(data) if data else None
+    return {**describe(data), "duration": data.get("duration"), "size": st.st_size} if data else None
 
 
 def flush():
