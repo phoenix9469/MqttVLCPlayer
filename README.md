@@ -180,12 +180,14 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/lgtv/on`, `cvlc_tv/lgtv/off` | 구독 | TV 켜기 / 끄기 |
 | `cvlc_tv/lgtv/switch/set` | 구독 | `1` 켜기, `0` 끄기 |
 | `cvlc_tv/cvlc/play`, `cvlc_tv/cvlc/stop` | 구독 | 랜덤 재생 / 정지 |
+| `cvlc_tv/cvlc/switch/set` | 구독 | 영상 재생 스위치: `1` 랜덤 재생(이미 재생 중이면 그대로), `0` 정지. 버튼과 달리 HA scene에 넣을 수 있음 |
 | `cvlc_tv/sound/play` | 구독 | 사운드 파일 재생. payload: `doorbell.mp3` 또는 `{"file": "doorbell.mp3", "volume": 80}` |
 | `cvlc_tv/sound/say` | 구독 | 문장 읽기(TTS). payload: `玄関のドアが開きました。` 또는 `{"text": "...", "volume": 80, "lang": "ja", "speed": 1.2, "voice": "ja_JP-css10-6lang-medium", "speaker": 0}` |
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/overlay/show` | 구독 | 화면 알림창 표시. payload: 글 또는 JSON (아래 "화면 알림창" 참고) |
 | `cvlc_tv/overlay/hide` | 구독 | 화면 알림창 닫기. payload에 `id`를 넣으면 그 알림만, 비우면 모두 |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
+| `cvlc_tv/cvlc/switch` | 발행(retain) | 영상 재생 중 `1` / 아님 `0` (랜덤·수동·링크 재생 모두, 영상이 끝나도 반영) |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
 
 알림 소리는 요청된 순서대로 하나씩 재생됩니다. 그래서 `sound/play`로 차임을 보낸 뒤 `sound/say`로 안내 문장을 보내면 차례로 들립니다.

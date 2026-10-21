@@ -158,6 +158,10 @@ TOPIC_TV_SWITCH = "cvlc_tv/lgtv/switch"
 TOPIC_TV_SWITCH_SET = "cvlc_tv/lgtv/switch/set"
 TOPIC_PLAY = "cvlc_tv/cvlc/play"
 TOPIC_STOP = "cvlc_tv/cvlc/stop"
+# 영상 재생 스위치: 켜면 랜덤 재생(이미 재생 중이면 그대로), 끄면 정지. 상태는 지금 영상이 재생 중인지
+# (버튼과 달리 HA scene에 넣을 수 있음)
+TOPIC_VIDEO_SWITCH = "cvlc_tv/cvlc/switch"
+TOPIC_VIDEO_SWITCH_SET = "cvlc_tv/cvlc/switch/set"
 TOPIC_OVERLAY_SHOW = "cvlc_tv/overlay/show"
 TOPIC_OVERLAY_HIDE = "cvlc_tv/overlay/hide"
 TOPIC_SOUND_PLAY = "cvlc_tv/sound/play"
@@ -202,6 +206,17 @@ DISCOVERY = [
         "name": "BTN_CVLC_STOP",
         "unique_id": "CVLC_STOP",
         "command_topic": TOPIC_STOP,
+    }),
+    ("homeassistant/switch/cvlc_tv_video/config", {
+        "name": "SWITCH_CVLC_VIDEO",
+        "unique_id": "CVLC_VIDEO_SWITCH",
+        "icon": "mdi:television-play",
+        "state_topic": TOPIC_VIDEO_SWITCH,
+        "command_topic": TOPIC_VIDEO_SWITCH_SET,
+        "payload_on": "1",
+        "payload_off": "0",
+        "state_on": "1",
+        "state_off": "0",
     }),
     ("homeassistant/switch/cvlc_tv_switch/config", {
         "name": "SWITCH_LGTV_PWR",
@@ -817,6 +832,25 @@ def update_tv_status():
 stop_event = threading.Event()
 
 
+video_state = None  # HA에 마지막으로 알린 영상 재생 상태 (None이면 다음에 꼭 알림)
+
+
+def publish_video_state(force=False):
+    """영상 재생 중인지 HA 스위치 상태로 알림 (바뀌었을 때만)"""
+    global video_state
+    playing = player.playing
+    if force or playing != video_state:
+        video_state = playing
+        client.publish(TOPIC_VIDEO_SWITCH, "1" if playing else "0", retain=True)
+
+
+def video_state_loop():
+    """영상이 끝나거나 웹 UI에서 틀고 끈 것도 스위치 상태에 반영되도록 지켜봄"""
+    while not stop_event.wait(1):
+        if client.is_connected():
+            publish_video_state()
+
+
 def status_loop():
     while not stop_event.wait(STATUS_INTERVAL):
         update_tv_status()
@@ -839,10 +873,12 @@ def on_connect(client, userdata, flags, reason_code, properties):
     log.info("MQTT connected to %s:%d", MQTT_HOST, MQTT_PORT)
     # 재접속 시에도 구독/discovery가 유지되도록 연결될 때마다 수행
     client.subscribe([(t, 0) for t in (TOPIC_TV_ON, TOPIC_TV_OFF, TOPIC_TV_SWITCH_SET, TOPIC_PLAY, TOPIC_STOP,
+                                       TOPIC_VIDEO_SWITCH_SET,
                                        TOPIC_SOUND_PLAY, TOPIC_SOUND_SAY, TOPIC_SOUND_STOP,
                                        TOPIC_OVERLAY_SHOW, TOPIC_OVERLAY_HIDE)])
     publish_ha_discovery()
     client.publish(TOPIC_AVAILABILITY, "online", retain=True)
+    publish_video_state(force=True)
     if STATUS_INTERVAL > 0:
         threading.Thread(target=update_tv_status, daemon=True).start()
 
@@ -864,6 +900,12 @@ def handle_message(topic, payload):
         play_random()
     elif topic == TOPIC_STOP:
         stop_playback()
+    elif topic == TOPIC_VIDEO_SWITCH_SET:
+        if payload == "1" and not player.playing:
+            play_random()
+        elif payload == "0":
+            stop_playback()
+        publish_video_state(force=True)
     elif topic == TOPIC_SOUND_PLAY:
         name, opts = parse_sound_payload(payload, "file")
         sounds.play(name.strip(), opts.get("volume"))
@@ -1285,6 +1327,7 @@ def main():
     client.loop_start()
     if STATUS_INTERVAL > 0:
         threading.Thread(target=status_loop, daemon=True).start()
+    threading.Thread(target=video_state_loop, daemon=True).start()
     exit_code = 0
     try:
         app.run(host=WEB_HOST, port=WEB_PORT)
