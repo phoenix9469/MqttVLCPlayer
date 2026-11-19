@@ -284,7 +284,7 @@ TV도 snapclient로 소리를 내야 모든 스피커가 맞춰집니다. 화면
 ### 1. snapserver
 
 ```bash
-sudo apt install snapserver snapclient     # 0.27 이상
+sudo apt install snapserver snapclient pulseaudio-utils   # snapcast 0.27 이상, pactl(싱크 만들기)은 pulseaudio-utils
 sudo cp deploy/snapserver.conf /etc/snapserver.conf
 sudo systemctl enable --now snapserver
 sudo systemctl disable --now snapclient   # 패키지가 켜는 시스템 snapclient는 끔 (아래 사용자 서비스로 대신)
