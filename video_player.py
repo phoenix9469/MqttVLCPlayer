@@ -21,6 +21,7 @@ import loudness
 import media_info
 import tts
 from player import PLAYER_BACKEND, Player
+import snapcast
 import sound
 import stream
 import subtitles
@@ -162,6 +163,11 @@ TOPIC_STOP = "cvlc_tv/cvlc/stop"
 # (버튼과 달리 HA scene에 넣을 수 있음)
 TOPIC_VIDEO_SWITCH = "cvlc_tv/cvlc/switch"
 TOPIC_VIDEO_SWITCH_SET = "cvlc_tv/cvlc/switch/set"
+# Snapcast 출력 스위치와 립싱크 보정(ms)
+TOPIC_SNAPCAST = "cvlc_tv/snapcast/switch"
+TOPIC_SNAPCAST_SET = "cvlc_tv/snapcast/switch/set"
+TOPIC_AUDIO_DELAY = "cvlc_tv/snapcast/audio_delay"
+TOPIC_AUDIO_DELAY_SET = "cvlc_tv/snapcast/audio_delay/set"
 TOPIC_OVERLAY_SHOW = "cvlc_tv/overlay/show"
 TOPIC_OVERLAY_HIDE = "cvlc_tv/overlay/hide"
 TOPIC_SOUND_PLAY = "cvlc_tv/sound/play"
@@ -217,6 +223,29 @@ DISCOVERY = [
         "payload_off": "0",
         "state_on": "1",
         "state_off": "0",
+    }),
+    ("homeassistant/switch/cvlc_tv_snapcast/config", {
+        "name": "SWITCH_CVLC_SNAPCAST",
+        "unique_id": "CVLC_SNAPCAST",
+        "icon": "mdi:speaker-multiple",
+        "state_topic": TOPIC_SNAPCAST,
+        "command_topic": TOPIC_SNAPCAST_SET,
+        "payload_on": "1",
+        "payload_off": "0",
+        "state_on": "1",
+        "state_off": "0",
+    }),
+    ("homeassistant/number/cvlc_tv_audio_delay/config", {
+        "name": "NUMBER_CVLC_AUDIO_DELAY",
+        "unique_id": "CVLC_AUDIO_DELAY",
+        "icon": "mdi:timer-sync-outline",
+        "state_topic": TOPIC_AUDIO_DELAY,
+        "command_topic": TOPIC_AUDIO_DELAY_SET,
+        "min": snapcast.AUDIO_DELAY_RANGE[0],
+        "max": snapcast.AUDIO_DELAY_RANGE[1],
+        "step": 10,
+        "mode": "box",
+        "unit_of_measurement": "ms",
     }),
     ("homeassistant/switch/cvlc_tv_switch/config", {
         "name": "SWITCH_LGTV_PWR",
@@ -275,6 +304,9 @@ config = {
     "sub_border": 3,              # 테두리 두께
     "sub_pos": 100,               # 세로 위치 (100 = 맨 아래, 작을수록 위로)
     "video_volume": VIDEO_VOLUME,
+    # Snapcast로 영상·알림 소리 내보내기 (여러 스피커 동시 재생), 영상 립싱크 보정(ms, 음수 = 소리를 먼저)
+    "snapcast": snapcast.SNAPCAST,
+    "audio_delay_ms": snapcast.SNAPCAST_AUDIO_DELAY_MS,
     "sound_volume": sound.SOUND_VOLUME,
     "ytdlp": dict(downloader.DEFAULT_SETTINGS),
 }
@@ -282,6 +314,8 @@ if os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, "r") as f:
         config.update({k: v for k, v in json.load(f).items() if k in config})
 config["sound_volume"] = sound.set_default_volume(config["sound_volume"])
+config["snapcast"] = bool(config["snapcast"])
+config["audio_delay_ms"] = snapcast.clamp_delay(config["audio_delay_ms"], snapcast.SNAPCAST_AUDIO_DELAY_MS)
 try:
     config["ytdlp"] = downloader.normalize_settings(config["ytdlp"])
 except ValueError as e:
@@ -317,12 +351,39 @@ def sub_style_args():
     return [f"--{prop}={config[key]}" for key, prop in SUB_STYLE_PROPERTIES.items()]
 
 
-def video_volume_args():
-    """영상 재생 시작 시 음량 옵션"""
+def video_start_args():
+    """영상 재생 시작 시 음량 옵션 (Snapcast로 낼 때는 출력 장치와 립싱크 보정도)"""
     volume = config["video_volume"]
     if PLAYER_BACKEND == "mpv":
-        return [f"--volume={volume}"]
+        return [f"--volume={volume}"] + snapcast.mpv_args(snapcast_ready(), config["audio_delay_ms"])
     return [f"--gain={volume / 100:.2f}"]
+
+
+def snapcast_ready():
+    """Snapcast로 낼지: 켜져 있고 싱크가 준비됐을 때만 (없으면 만들어 보고, 안 되면 원래 출력으로)"""
+    return PLAYER_BACKEND == "mpv" and config["snapcast"] and snapcast.ensure_sink()
+
+
+def set_audio_output(enabled=None, delay_ms=None):
+    """Snapcast 출력 켜기/끄기와 립싱크 보정(ms) 저장. 재생 중인 영상에도 바로 적용 (알림은 다음 소리부터)"""
+    changed = False
+    if enabled is not None and bool(enabled) != config["snapcast"]:
+        config["snapcast"] = bool(enabled)
+        changed = True
+    if delay_ms is not None:
+        delay_ms = snapcast.clamp_delay(delay_ms, config["audio_delay_ms"])
+        changed = changed or delay_ms != config["audio_delay_ms"]
+        config["audio_delay_ms"] = delay_ms
+    if not changed:
+        return
+    save_config()
+    publish_audio_output_state()
+    if PLAYER_BACKEND == "mpv" and player.playing:
+        ready = snapcast_ready()
+        player.mpv_command(MPV_IPC_PATH, "set_property", "audio-device", snapcast.device() if ready else "auto",
+                           quiet=True)
+        player.mpv_command(MPV_IPC_PATH, "set_property", "audio-delay",
+                           config["audio_delay_ms"] / 1000 if ready else 0, quiet=True)
 
 
 def set_video_volume(volume):
@@ -365,8 +426,11 @@ def create_m3u8_playlist():
 
 
 player = Player(VIDEO_PLAYER_ARGS)
-# 영상이 재생 중이면 HDMI 소리 출력이 이미 깨어 있으므로 알림 앞 무음을 넣지 않는다
-sounds.output_active = lambda: player.playing
+# 영상이 재생 중이면 HDMI 소리 출력이 이미 깨어 있으므로 알림 앞 무음을 넣지 않는다.
+# Snapcast로 낼 때도 넣지 않음 (snapclient가 늘 소리를 내고 있어서 출력이 잠들지 않음)
+sounds.output_active = lambda: player.playing or config["snapcast"]
+# 알림 소리도 Snapcast로 (립싱크 보정은 영상에만)
+sounds.output_args = lambda: snapcast.mpv_args(snapcast_ready(), 0, video=False)
 
 
 def on_download_finished():
@@ -508,7 +572,8 @@ def playback_status():
             "fps": props["container-fps"] or props["estimated-vf-fps"], "latency": latency,
             "subs": subtitle_tracks(props["track-list"]), "sid": props["sid"],
             "sub_pos": props["sub-pos"], "sub_scale": props["sub-scale"],
-            "size": file_size(props["path"]) if not status["is_stream"] else None}
+            "size": file_size(props["path"]) if not status["is_stream"] else None,
+            "snapcast": config["snapcast"], "audio_delay_ms": config["audio_delay_ms"]}
 
 
 def file_size(path):
@@ -599,7 +664,7 @@ def play_stream(url, retry=0):
     generation = set_now_playing("stream", url, {"title": "", "channel": "", "is_live": False, "url": url})
     # 창(검은 화면 + 불러오는 중)은 바로 띄우고, 링크는 따로 한 번만 읽어서 실제 스트림 주소를 넘긴다
     args = MANUAL_PLAYER_ARGS + stream.mpv_args(config["ytdlp"])
-    if not player.play("--idle=once", video_volume_args(), args=args):
+    if not player.play("--idle=once", video_start_args(), args=args):
         return False
     log.info("Opening link %s", url)
     threading.Thread(target=show_loading, args=(url, generation), daemon=True).start()
@@ -705,7 +770,7 @@ def play_manual(path):
     """수동 재생: 영상 파일 하나, 또는 블루레이 폴더의 본편(가장 긴 타이틀)을 시계 없이 재생"""
     overlay_player.stop()
     order = subtitles.parse_order(config["sub_langs"])
-    extra = video_volume_args() + [f"--slang={subtitles.slang(order)}"]
+    extra = video_start_args() + [f"--slang={subtitles.slang(order)}"]
     if PLAYER_BACKEND == "mpv":
         extra += sub_style_args()
     if os.path.isdir(path):
@@ -775,7 +840,7 @@ def play_random():
     set_now_playing("random", config["nas_folder"])
     # mpv는 .m3u8을 스트림(HLS)으로 열 수 있어서 재생목록임을 명시한다
     return player.play(f"--playlist={PLAYLIST_PATH}" if PLAYER_BACKEND == "mpv" else PLAYLIST_PATH,
-                       video_volume_args())
+                       video_start_args())
 
 
 # ---------------------------------------------------------------------------
@@ -844,6 +909,12 @@ def publish_video_state(force=False):
         client.publish(TOPIC_VIDEO_SWITCH, "1" if playing else "0", retain=True)
 
 
+def publish_audio_output_state():
+    """Snapcast 출력 상태와 립싱크 보정 값을 HA에 알림"""
+    client.publish(TOPIC_SNAPCAST, "1" if config["snapcast"] else "0", retain=True)
+    client.publish(TOPIC_AUDIO_DELAY, str(config["audio_delay_ms"]), retain=True)
+
+
 def video_state_loop():
     """영상이 끝나거나 웹 UI에서 틀고 끈 것도 스위치 상태에 반영되도록 지켜봄"""
     while not stop_event.wait(1):
@@ -873,12 +944,13 @@ def on_connect(client, userdata, flags, reason_code, properties):
     log.info("MQTT connected to %s:%d", MQTT_HOST, MQTT_PORT)
     # 재접속 시에도 구독/discovery가 유지되도록 연결될 때마다 수행
     client.subscribe([(t, 0) for t in (TOPIC_TV_ON, TOPIC_TV_OFF, TOPIC_TV_SWITCH_SET, TOPIC_PLAY, TOPIC_STOP,
-                                       TOPIC_VIDEO_SWITCH_SET,
+                                       TOPIC_VIDEO_SWITCH_SET, TOPIC_SNAPCAST_SET, TOPIC_AUDIO_DELAY_SET,
                                        TOPIC_SOUND_PLAY, TOPIC_SOUND_SAY, TOPIC_SOUND_STOP,
                                        TOPIC_OVERLAY_SHOW, TOPIC_OVERLAY_HIDE)])
     publish_ha_discovery()
     client.publish(TOPIC_AVAILABILITY, "online", retain=True)
     publish_video_state(force=True)
+    publish_audio_output_state()
     if STATUS_INTERVAL > 0:
         threading.Thread(target=update_tv_status, daemon=True).start()
 
@@ -906,6 +978,11 @@ def handle_message(topic, payload):
         elif payload == "0":
             stop_playback()
         publish_video_state(force=True)
+    elif topic == TOPIC_SNAPCAST_SET:
+        if payload in ("0", "1"):
+            set_audio_output(enabled=payload == "1")
+    elif topic == TOPIC_AUDIO_DELAY_SET:
+        set_audio_output(delay_ms=payload)
     elif topic == TOPIC_SOUND_PLAY:
         name, opts = parse_sound_payload(payload, "file")
         sounds.play(name.strip(), opts.get("volume"))
@@ -998,6 +1075,8 @@ def update_config():
             # 재생 중이면 바로 보이게
             if now_playing["mode"] in ("manual", "bluray"):
                 player.mpv_command(MPV_IPC_PATH, "set_property", prop, value, quiet=True)
+    if "snapcast" in data or "audio_delay_ms" in data:
+        set_audio_output(data.get("snapcast"), data.get("audio_delay_ms"))
     save_config()
     return jsonify({"status": "success", "config": config})
 
@@ -1021,6 +1100,21 @@ def update_volume():
     save_config()
     return jsonify({"status": "success", "video": config["video_volume"],
                     "sound": config["sound_volume"], "video_applied_now": applied})
+
+
+@app.route("/audio/output", methods=["POST"])
+def audio_output_route():
+    """Snapcast 출력과 립싱크 보정. body: {"snapcast": true/false, "audio_delay_ms": -450} 또는 {"delta": 50}"""
+    data = request.get_json(silent=True) or {}
+    delay = data.get("audio_delay_ms")
+    if data.get("delta") is not None:
+        try:
+            delay = config["audio_delay_ms"] + int(data["delta"])
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "delta는 숫자여야 합니다"}), 400
+    set_audio_output(data.get("snapcast"), delay)
+    return jsonify({"status": "success", "snapcast": config["snapcast"], "audio_delay_ms": config["audio_delay_ms"],
+                    "ready": bool(config["snapcast"]) and snapcast.sink_exists()})
 
 
 @app.route("/on_tv", methods=["POST"])
@@ -1286,7 +1380,7 @@ def play_video():
         return "Unknown video", 400
     overlay_player.stop()
     set_now_playing("list", videos[name])
-    player.play(videos[name], video_volume_args())
+    player.play(videos[name], video_start_args())
     return redirect(url_for("file_list"))
 
 
@@ -1328,6 +1422,8 @@ def main():
     if STATUS_INTERVAL > 0:
         threading.Thread(target=status_loop, daemon=True).start()
     threading.Thread(target=video_state_loop, daemon=True).start()
+    if config["snapcast"] and PLAYER_BACKEND == "mpv":
+        threading.Thread(target=snapcast.ensure_sink, daemon=True).start()
     exit_code = 0
     try:
         app.run(host=WEB_HOST, port=WEB_PORT)

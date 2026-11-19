@@ -1,0 +1,24 @@
+# TV로 나가는 로컬 snapclient (사용자 서비스: 데스크톱 세션의 PipeWire/PulseAudio로 출력)
+#
+# 설치:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/snapclient-tv.service ~/.config/systemd/user/
+#   echo 'SNAPCLIENT_TV_SINK=<TV 싱크 이름>' > ~/.config/snapclient-tv.env   # pactl list short sinks 에서 확인
+#   systemctl --user daemon-reload && systemctl --user enable --now snapclient-tv
+#
+# 싱크를 꼭 지정할 것: 기본 출력으로 내면 기본 출력이 snapcast 싱크일 때 소리가 다시 Snapcast로 돌아가 되먹임됨.
+# 패키지가 켜 두는 시스템 snapclient는 끌 것: sudo systemctl disable --now snapclient
+
+[Unit]
+Description=Snapcast client for the TV output (MqttVLCPlayer)
+After=pipewire-pulse.service pulseaudio.service
+
+[Service]
+EnvironmentFile=-%h/.config/snapclient-tv.env
+# SNAPCLIENT_TV_OPTS로 추가 옵션 (예: --latency 50 = TV 출력 지연 보정 ms)
+ExecStart=/usr/bin/snapclient --host 127.0.0.1 --hostID tv --player pulse --soundcard ${SNAPCLIENT_TV_SINK} $SNAPCLIENT_TV_OPTS --logsink stderr
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

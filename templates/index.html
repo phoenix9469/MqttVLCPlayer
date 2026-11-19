@@ -55,6 +55,12 @@
             <button class="btn secondary" data-action="sub_reset" title="자막 위치·크기 처음대로">↺</button>
             <span class="hint" id="now-sub-style"></span>
         </div>
+        <div class="row" id="now-sync-box" hidden>
+            <span>립싱크 <strong id="now-sync"></strong></span>
+            <button class="btn secondary" data-sync="-50" title="소리를 50ms 먼저 (화면보다 소리가 늦을 때)">소리 빠르게</button>
+            <button class="btn secondary" data-sync="50" title="소리를 50ms 늦게 (화면보다 소리가 빠를 때)">소리 늦게</button>
+            <span class="hint">Snapcast 출력 중 · 음수 = 소리를 먼저</span>
+        </div>
         <details id="now-chapters-box" open hidden>
             <summary id="now-chapters-summary">챕터</summary>
             <ol class="chapters" id="now-chapters"></ol>
@@ -322,6 +328,14 @@
                 </div>
                 <span class="hint">글자 모양은 스타일이 없는 자막(srt, smi, vtt)에만 적용되고, ass/ssa 자막은 파일에 정해진 색과 위치 그대로 나옵니다. 위치는 오른쪽 끝이 맨 아래입니다. 재생 중이면 저장하자마자 바뀝니다.</span>
             </div>
+            <div class="form-group">
+                <label>Snapcast (여러 스피커 동시 재생)</label>
+                <div class="row sub-style">
+                    <label><input type="checkbox" name="snapcast" {% if config['snapcast'] %}checked{% endif %}> 영상·알림 소리를 Snapcast로 내보내기</label>
+                    <label>립싱크 <input type="number" name="audio_delay_ms" value="{{ config['audio_delay_ms'] }}" min="-3000" max="1000" step="10" style="width: 6em"> ms</label>
+                </div>
+                <span class="hint">켜면 소리를 snapserver로 보내서 TV(로컬 snapclient)와 다른 스피커에서 함께 납니다. 립싱크는 음수일수록 소리를 먼저 내보냅니다(대략 −snapserver 버퍼). 재생 중이면 저장하자마자 바뀝니다. 싱크를 만들 수 없으면(snapserver가 꺼져 있는 등) 원래 출력으로 재생합니다.</span>
+            </div>
             <div class="actions">
                 <button type="submit" class="btn">설정 저장</button>
             </div>
@@ -343,7 +357,8 @@
                 body: JSON.stringify({ nas_folder: formData.get('nas_folder'), library_folder: formData.get('library_folder'),
                                        archive_folder: formData.get('archive_folder'), sub_langs: formData.get('sub_langs'),
                                        sub_font_size: formData.get('sub_font_size'), sub_color: formData.get('sub_color'),
-                                       sub_border: formData.get('sub_border'), sub_pos: formData.get('sub_pos') })
+                                       sub_border: formData.get('sub_border'), sub_pos: formData.get('sub_pos'),
+                                       snapcast: formData.get('snapcast') === 'on', audio_delay_ms: formData.get('audio_delay_ms') })
             })
             .then(response => response.json())
             .then(data => {
@@ -444,6 +459,10 @@
                 document.getElementById('now-sub-style').textContent = data.sub_pos == null ? '' :
                     `위치 ${Math.round(data.sub_pos)} · 크기 ${Math.round((data.sub_scale || 1) * 100)}%`;
 
+                // 립싱크: Snapcast로 낼 때만
+                document.getElementById('now-sync-box').hidden = !data.snapcast;
+                if (data.snapcast) document.getElementById('now-sync').textContent = `${data.audio_delay_ms > 0 ? '+' : ''}${data.audio_delay_ms}ms`;
+
                 // 챕터: 블루레이 등 챕터가 있을 때만
                 const box = document.getElementById('now-chapters-box');
                 const chapters = data.chapters || [];
@@ -474,6 +493,13 @@
               });
         }
 
+        document.querySelectorAll('#now [data-sync]').forEach(button => {
+            button.addEventListener('click', () => fetch('/audio/output', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ delta: Number(button.dataset.sync) })
+            }).then(() => setTimeout(refreshNow, 100)));
+        });
         document.getElementById('now-subs').addEventListener('change', function() {
             control('sub', this.value);
             this.blur();

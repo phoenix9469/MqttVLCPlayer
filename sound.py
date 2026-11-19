@@ -77,6 +77,7 @@ class SoundQueue:
         self._generation = 0  # stop() 할 때마다 증가, 이전에 요청된 소리는 재생하지 않음
         self._last_end = 0.0  # 마지막 알림이 끝난 시각 (time.monotonic)
         self.output_active = lambda: False  # 소리 출력이 이미 깨어 있는지 (예: 영상 재생 중)
+        self.output_args = lambda: []  # 출력 장치 등 추가 재생기 옵션 (예: Snapcast)
         threading.Thread(target=self._worker, daemon=True).start()
 
     def play(self, name, volume=None):
@@ -131,7 +132,7 @@ class SoundQueue:
         return [f"--af=lavfi=[adelay=delays={SOUND_PREROLL_MS}:all=1]"]
 
     def _play_item(self, generation, kind, target, volume):
-        extra = volume_args(volume)
+        extra = volume_args(volume) + (self.output_args() if PLAYER_BACKEND == "mpv" else [])
         with tempfile.TemporaryDirectory() as tmp:
             if kind == "tts":
                 text, lang, options = target

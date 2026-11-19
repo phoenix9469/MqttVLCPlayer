@@ -10,6 +10,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 - **알림 소리 / 음성 안내**: Home Assistant 자동화에서 기기 스피커로 사운드 파일이나 TTS 음성을 재생합니다. 영상 재생 중에도 함께 재생됩니다.
 - **화면 알림창**: 디스코드 임베드 모양의 반투명 알림창(제목, 내용, 색 띠, 필드, 바닥글)을 띄웁니다. 기본 위치는 오른쪽 아래이고, 알림이 여러 개면 새 알림이 아래에 오고 이전 알림은 위로 밀려납니다. 영상 재생 중이면 영상 위에, 아니면 검은 화면을 띄워서 표시하고 알림이 모두 사라지면 닫습니다(mpv).
 - **개별 영상 재생**: 웹 UI의 자동 재생 목록에서 선택해서 재생합니다.
+- **Snapcast 동시 재생**: 영상·알림 소리를 snapserver로 보내서 TV(로컬 snapclient)와 다른 스피커(예: NUGU Candle)에서 동시에 재생합니다. 영상 립싱크는 재생 중에 웹 UI에서 맞출 수 있습니다(mpv, 아래 "Snapcast" 참고).
 - **수동 재생**: 자동 재생 폴더와 따로, 수동 재생 폴더(기본 `/LL`)를 웹 UI에서 하위 폴더까지 둘러보고 골라서 재생합니다. 수동 재생 때는 시계를 표시하지 않습니다.
   `BDMV/index.bdmv`가 들어 있는 블루레이 리핑 폴더는 "💿" 항목으로 보이고, 재생하면 메뉴 없이 본편(가장 긴 타이틀)을 재생합니다(mpv `bd://longest`). 암호화(AACS)를 푼 리핑만 재생할 수 있습니다.
 - **자막 (수동 재생)**: 영상과 같은 폴더에 같은 이름으로 확장자만 다른 자막 파일(`01화.mkv` → `01화.srt`, `01화.ass` 등)이 있으면 함께 띄웁니다. srt, ass, ssa, vtt, smi, sup, idx/sub, lrc를 읽고, 파일 이름에 언어가 없어도 내용의 글자(한글·가나·로마자)로 **한국어 / 일본어 / 영어**를 구분해서 웹 UI 설정의 "자막 언어 순서"(기본 한국어 → 일본어 → 영어)에서 앞선 자막을 표시합니다. 같은 언어면 ass를 srt보다 먼저 고르고, UTF-8이 아닌 옛 자막(cp949, shift_jis)도 읽습니다. 영상 안에 든 자막(mkv 등)도 같은 순서로 고르고, 블루레이도 이 순서로 자막 언어를 고릅니다. 재생 중에는 처음 화면의 "자막"에서 다른 자막으로 바꾸거나 끌 수 있습니다. 설정의 "기본 자막 모양"에서 글자 크기, 색, 테두리, 세로 위치를 정할 수 있습니다(스타일이 없는 srt·smi·vtt에만 적용, ass/ssa는 파일에 정해진 색과 위치 그대로). 재생 중에는 ▲▼로 자막을 위아래로, 가-/가+로 크기를 바꿀 수 있고(그 영상에서만, ↺로 처음대로), srt의 `<font color>`·`{\an8}`(위쪽) 같은 태그도 표시됩니다. 랜덤 재생과 링크 재생은 자막을 띄우지 않습니다. 일본어·한국어 글자가 □로 나오면 `sudo apt install fonts-noto-cjk`.
@@ -38,6 +39,7 @@ Home Assistant(MQTT Discovery)와 웹 UI에서 제어할 수 있습니다.
 | `mpv/live.lua` | 라이브 재생을 항상 맨 앞(실시간)으로 유지하는 mpv 스크립트 |
 | `stream.py` | 링크 재생 정보 확인(yt-dlp)과 라이브 녹화 |
 | `media_info.py` | 영상 코덱 정보(ffprobe) 저장과 하드웨어 디코딩 가능 여부(vainfo) 판단 |
+| `snapcast.py` | Snapcast 출력: 싱크 만들기와 mpv 출력 장치·립싱크 옵션 |
 | `subtitles.py` | 수동 재생 자막: 같은 이름의 자막 파일 찾기와 언어(한국어·일본어·영어) 판별 |
 | `downloader.py` | yt-dlp 영상 다운로드 대기열 (웹 UI) |
 | `templates/` | 웹 UI 화면 |
@@ -120,7 +122,11 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `VLC_EXTRA_ARGS` | 없음 | (`VIDEO_PLAYER=vlc`) 영상 재생에 추가할 VLC 옵션. 비교는 `bash deploy/vlc-benchmark.sh <영상 파일>` |
 | `SOUNDS_FOLDER` | `./sounds` | 알림용 사운드 파일 폴더(`.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.flac`, `.m4a`, `.aac`). 웹 UI 알림 소리 섹션에 실제로 읽는 폴더가 표시됨. 저장소 밖 폴더(예: `~/sounds`)를 권장 |
 | `VIDEO_VOLUME` | `100` | 영상 음량 처음 값(0~200, 100이 원래 크기). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
-| `SOUND_PREROLL_MS` | `1500` | 알림 앞에 넣을 무음(ms). HDMI 스피커가 대기 상태에서 깨어나는 동안 앞부분이 잘리는 것을 막음. 영상 재생 중이거나 직전 알림 직후에는 넣지 않음. `0`이면 끔(mpv만) |
+| `SOUND_PREROLL_MS` | `1500` | 알림 앞에 넣을 무음(ms). HDMI 스피커가 대기 상태에서 깨어나는 동안 앞부분이 잘리는 것을 막음. 영상 재생 중이거나 직전 알림 직후, Snapcast 출력 중에는 넣지 않음. `0`이면 끔(mpv만) |
+| `SNAPCAST` | `0` | `1`이면 영상·알림 소리를 Snapcast 싱크로 출력 (웹 UI·HA에서 바꾸면 `config.json` 값이 우선, mpv만) |
+| `SNAPCAST_SINK` | `snapcast` | 출력할 PipeWire/PulseAudio 싱크 이름 (mpv `--audio-device=pulse/<이름>`) |
+| `SNAPCAST_FIFO` | `/tmp/snapfifo` | 싱크가 없을 때 앱이 만드는 싱크(module-pipe-sink)가 쓸 FIFO. `snapserver.conf`의 `pipe://` 경로와 같아야 함 |
+| `SNAPCAST_AUDIO_DELAY_MS` | `-450` | 영상 립싱크 보정(ms) 처음 값. 음수 = 소리를 먼저. 대략 −(snapserver `buffer` + TV 출력 지연). 웹 UI·HA에서 바꾸면 `config.json` 값이 우선 |
 | `SOUND_PREROLL_IDLE` | `10` | 직전 알림이 끝나고 이 시간(초)이 지난 뒤에만 무음을 넣음 |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨 처음 값(0~200). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
 | `TTS_ENGINES` | `piper,espeak` | 시도할 TTS 엔진 순서. 실패하면 다음 엔진 사용. `piper`(piper-plus), `espeak`(espeak-ng, 음질 낮음) |
@@ -186,7 +192,10 @@ sudo systemctl enable --now mqttvlcplayer
 | `cvlc_tv/sound/stop` | 구독 | 재생 중인 알림 소리와 대기 중인 알림 모두 취소 |
 | `cvlc_tv/overlay/show` | 구독 | 화면 알림창 표시. payload: 글 또는 JSON (아래 "화면 알림창" 참고) |
 | `cvlc_tv/overlay/hide` | 구독 | 화면 알림창 닫기. payload에 `id`를 넣으면 그 알림만, 비우면 모두 |
+| `cvlc_tv/snapcast/switch/set` | 구독 | Snapcast 출력 `1` 켜기 / `0` 끄기 (재생 중인 영상에도 바로 적용) |
+| `cvlc_tv/snapcast/audio_delay/set` | 구독 | 영상 립싱크 보정(ms, −3000~1000) |
 | `cvlc_tv/lgtv/status`, `cvlc_tv/lgtv/switch` | 발행(retain) | TV 전원 상태 `1` / `0` |
+| `cvlc_tv/snapcast/switch`, `cvlc_tv/snapcast/audio_delay` | 발행(retain) | Snapcast 출력 상태, 립싱크 보정 값 |
 | `cvlc_tv/cvlc/switch` | 발행(retain) | 영상 재생 중 `1` / 아님 `0` (랜덤·수동·링크 재생 모두, 영상이 끝나도 반영) |
 | `cvlc_tv/availability` | 발행(retain) | `online` / `offline` |
 
@@ -253,6 +262,76 @@ automation:
 ALSA 장치를 직접 사용하는 환경에서는 두 번째 소리가 재생되지 않을 수 있습니다.
 
 예약 재생이 필요하면 Home Assistant 자동화에서 위 토픽(또는 등록된 버튼)을 호출하세요.
+
+## Snapcast로 여러 스피커에 동시 재생
+
+영상과 알림 소리를 [Snapcast](https://github.com/badaix/snapcast)로 보내서, TV와 다른 스피커(예: NUGU Candle)에서 같은 시각에 재생합니다.
+
+```
+mpv(영상·알림) ─► PipeWire/Pulse 싱크 "snapcast" ─► /tmp/snapfifo ─► snapserver ─┬─► 로컬 snapclient ─► TV 출력
+                  (s16le 48000Hz 2ch)                            (:1704/1705/1780) └─► 다른 스피커의 snapclient
+```
+
+TV도 snapclient로 소리를 내야 모든 스피커가 맞춰집니다. 화면은 바로 나오고 소리는 snapserver 버퍼만큼 늦게 나오므로, mpv `--audio-delay`를 음수로 줘서 소리를 먼저 내보내 립싱크를 맞춥니다(알림 소리는 보정하지 않음).
+
+| 항목 | 값 |
+|---|---|
+| 포맷 / 코덱 | `48000:16:2` / `pcm` (클라이언트와 맞춘 고정값) |
+| 서버 버퍼 | 400ms에서 시작 (Wi-Fi 스피커가 끊기면 늘림) |
+| 포트 | 1704(스트림), 1705(제어), 1780(웹 UI·JSON-RPC) |
+| 서버 주소 | _(서버 노트북 IP를 확인해서 적을 것: `hostname -I`)_ |
+
+### 1. snapserver
+
+```bash
+sudo apt install snapserver snapclient     # 0.27 이상
+sudo cp deploy/snapserver.conf /etc/snapserver.conf
+sudo systemctl enable --now snapserver
+sudo systemctl disable --now snapclient   # 패키지가 켜는 시스템 snapclient는 끔 (아래 사용자 서비스로 대신)
+ls -l /tmp/snapfifo                       # prw-rw-rw- ... _snapserver  이면 정상
+```
+
+snapserver(사용자 `_snapserver`)가 FIFO를 모든 사용자가 쓸 수 있게 만들고, 데스크톱 사용자의 PipeWire가 거기에 씁니다. `prw-rw-rw-`가 아니면 drop-in으로 권한을 엽니다:
+`sudo systemctl edit snapserver` → `[Service]` 아래 `ExecStartPost=/bin/sh -c 'sleep 1; chmod 666 /tmp/snapfifo'`.
+방화벽을 쓰면 `sudo ufw allow 1704:1705/tcp` `sudo ufw allow 1780/tcp`.
+
+### 2. 싱크
+
+`SNAPCAST=1`이면 앱이 시작할 때와 재생할 때마다 싱크 `snapcast`가 있는지 보고, 없으면 만듭니다:
+
+```bash
+pactl load-module module-pipe-sink file=/tmp/snapfifo sink_name=snapcast format=s16le rate=48000 channels=2 sink_properties=device.description=Snapcast
+```
+
+FIFO가 아직 없으면(snapserver가 안 떠 있음) 만들지 않고 원래 출력(기본 싱크)으로 재생하며, 다음 재생 때 다시 시도합니다. 그래서 부팅 순서가 어긋나도 snapserver가 뜬 뒤 첫 재생부터 Snapcast로 나갑니다.
+싱크가 **기본 출력이 되면 안 됩니다**(로컬 snapclient 소리가 다시 Snapcast로 돌아감). 로그에 경고가 나오면 `pactl set-default-sink <TV 싱크>`로 TV 출력을 기본으로 돌려 두세요.
+
+### 3. TV 출력 = 로컬 snapclient
+
+```bash
+pactl list short sinks                    # TV로 나가는 싱크 이름 확인 (예: alsa_output.pci-0000_00_1b.0.hdmi-stereo)
+mkdir -p ~/.config/systemd/user
+cp deploy/snapclient-tv.service ~/.config/systemd/user/
+echo 'SNAPCLIENT_TV_SINK=alsa_output.pci-0000_00_1b.0.hdmi-stereo' > ~/.config/snapclient-tv.env
+systemctl --user daemon-reload && systemctl --user enable --now snapclient-tv
+```
+
+snapclient는 싱크를 지정해서 PipeWire로 냅니다(`--player pulse --soundcard <싱크>`). TV 출력 지연이 있으면 `SNAPCLIENT_TV_OPTS="--latency 50"`처럼 보정합니다. 다른 스피커의 클라이언트도 같은 서버 주소(1704 포트)로 붙습니다.
+
+### 4. 켜기와 립싱크 맞추기
+
+- `/etc/mqttvlcplayer.env`에 `SNAPCAST=1`, 또는 웹 UI 설정의 "Snapcast"를 켜고 저장. HA에서는 스위치 `SWITCH_CVLC_SNAPCAST`. 재생 중인 영상에도 바로 적용되고, 알림은 다음 소리부터 적용됩니다.
+- 립싱크: 영상 재생 중 처음 화면의 "립싱크" 줄에서 **소리 빠르게 / 소리 늦게**(50ms씩)로 대사 장면을 보며 맞춥니다. 값은 저장되어 다음 재생부터 기본값이 됩니다. HA에서는 `NUMBER_CVLC_AUDIO_DELAY`(ms).
+- 기준: 소리가 화면보다 늦으면 더 음수로, 빠르면 0 쪽으로. 대략 −(snapserver `buffer` + TV 출력 지연).
+- 스피커별 음량·음소거는 Home Assistant의 공식 **Snapcast 통합**(설정 → 기기 및 서비스 → 통합 추가 → Snapcast, 호스트 = 서버 주소, 포트 1705)으로 합니다.
+
+### 확인
+
+1. `pactl list short sinks`에 `snapcast`가 있고, 영상을 틀면 `http://<서버>:1780`의 스트림 `MqttVLCPlayer`가 playing.
+2. TV에서 소리가 나고, 1780 웹 UI에 클라이언트 `tv`가 보임.
+3. 알림(`cvlc_tv/sound/say`)이 영상 재생 중·정지 중 모두 Snapcast로 나옴.
+4. `SNAPCAST=0`이면 예전과 똑같이 기본 출력으로 재생.
+5. 재부팅 후: snapserver(시스템) → 데스크톱 로그인(PipeWire) → 앱·snapclient-tv(사용자). 앱은 싱크가 없으면 재생할 때 다시 만듭니다.
 
 ## 화면 알림창
 
