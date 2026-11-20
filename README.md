@@ -126,6 +126,7 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `SNAPCAST` | `0` | `1`이면 영상·알림 소리를 Snapcast 싱크로 출력 (웹 UI·HA에서 바꾸면 `config.json` 값이 우선, mpv만) |
 | `SNAPCAST_SINK` | `snapcast` | 출력할 PipeWire/PulseAudio 싱크 이름 (mpv `--audio-device=pulse/<이름>`) |
 | `SNAPCAST_FIFO` | `/tmp/snapfifo` | 싱크가 없을 때 앱이 만드는 싱크(module-pipe-sink)가 쓸 FIFO. `snapserver.conf`의 `pipe://` 경로와 같아야 함 |
+| `SNAPCAST_FIFO_MAX_MS` | `60` | FIFO에 밀려 있어도 되는 소리 양(ms). snapserver는 밀린 소리를 따라잡지 않아서, 잠깐 멈칫한 만큼 계속 늦게 나옴(립싱크가 재생마다 달라짐). 넘으면 넘친 만큼 버려서 지연을 일정하게 유지. `0`이면 끔 |
 | `SNAPCAST_AUDIO_DELAY_MS` | `-450` | 영상 립싱크 보정(ms) 처음 값. 음수 = 소리를 먼저. 대략 −(snapserver `buffer` + TV 출력 지연). 웹 UI·HA에서 바꾸면 `config.json` 값이 우선 |
 | `SOUND_PREROLL_IDLE` | `10` | 직전 알림이 끝나고 이 시간(초)이 지난 뒤에만 무음을 넣음 |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨 처음 값(0~200). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
@@ -303,7 +304,8 @@ snapserver(사용자 `_snapserver`)가 FIFO를 모든 사용자가 쓸 수 있�
 pactl load-module module-pipe-sink file=/tmp/snapfifo sink_name=snapcast format=s16le rate=48000 channels=2 sink_properties=device.description=Snapcast
 ```
 
-싱크는 재생하지 않을 때도 쉬지 않고 무음을 계속 보냅니다(`node.always-process=true`). 그래서 snapserver 스트림이 늘 playing이고, 재생을 시작할 때마다 클라이언트가 동기를 새로 맞추느라 앞부분이 끊기는 일이 없습니다. 예전 버전이 만든 싱크가 있으면 `pactl unload-module module-pipe-sink`로 한 번 지우면 다음 재생 때 새로 만듭니다.
+싱크는 재생하지 않을 때도 쉬지 않고 무음을 계속 보냅니다(`node.always-process=true`). 그래서 snapserver 스트림이 늘 playing이고, 재생을 시작할 때마다 클라이언트가 동기를 새로 맞추느라 앞부분이 끊기는 일이 없습니다. 또 snapserver는 FIFO를 실시간 속도로만 읽고 밀린 소리를 따라잡지 않으므로, 앱이 FIFO에 밀린 소리가 `SNAPCAST_FIFO_MAX_MS`(60ms)를 넘으면 넘친 만큼 버려서 지연(립싱크)을 일정하게 유지합니다. 버릴 때 로그에 `FIFO backlog`가 남습니다.
+예전 버전이 만든 싱크가 있으면 `pactl unload-module module-pipe-sink`로 한 번 지우면 다음 재생 때 새로 만듭니다.
 FIFO가 아직 없으면(snapserver가 안 떠 있음) 만들지 않고 원래 출력(기본 싱크)으로 재생하며, 다음 재생 때 다시 시도합니다. 그래서 부팅 순서가 어긋나도 snapserver가 뜬 뒤 첫 재생부터 Snapcast로 나갑니다.
 싱크가 **기본 출력이 되면 안 됩니다**(로컬 snapclient 소리가 다시 Snapcast로 돌아감). 로그에 경고가 나오면 `pactl set-default-sink <TV 싱크>`로 TV 출력을 기본으로 돌려 두세요.
 
