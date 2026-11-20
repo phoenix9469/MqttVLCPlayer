@@ -27,6 +27,10 @@ SAMPLE_RATE = 48000
 CHANNELS = 2
 
 AUDIO_DELAY_RANGE = (-3000, 1000)  # ms
+# 싱크가 쉬지 않고 늘 돌게 함 (PipeWire): 재생하지 않을 때도 FIFO에 무음이 계속 들어가서
+# snapserver 스트림이 idle↔playing을 오가지 않음. 오가면 재생을 시작할 때마다 클라이언트가 동기를 새로 맞추느라 끊김
+SINK_PROPERTIES = ("device.description=Snapcast session.suspend-timeout-seconds=0 "
+                   "node.always-process=true node.pause-on-idle=false")
 
 _lock = threading.Lock()
 
@@ -79,7 +83,7 @@ def ensure_sink():
             result = _pactl("load-module", "module-pipe-sink", f"file={SNAPCAST_FIFO}",
                             f"sink_name={SNAPCAST_SINK}", f"format={SAMPLE_FORMAT}",
                             f"rate={SAMPLE_RATE}", f"channels={CHANNELS}",
-                            "sink_properties=device.description=Snapcast")
+                            f'sink_properties="{SINK_PROPERTIES}"')
         except (OSError, subprocess.TimeoutExpired) as e:
             log.warning("Snapcast: cannot create sink: %s", e)
             return False

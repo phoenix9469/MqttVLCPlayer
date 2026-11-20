@@ -303,6 +303,7 @@ snapserver(사용자 `_snapserver`)가 FIFO를 모든 사용자가 쓸 수 있�
 pactl load-module module-pipe-sink file=/tmp/snapfifo sink_name=snapcast format=s16le rate=48000 channels=2 sink_properties=device.description=Snapcast
 ```
 
+싱크는 재생하지 않을 때도 쉬지 않고 무음을 계속 보냅니다(`node.always-process=true`). 그래서 snapserver 스트림이 늘 playing이고, 재생을 시작할 때마다 클라이언트가 동기를 새로 맞추느라 앞부분이 끊기는 일이 없습니다. 예전 버전이 만든 싱크가 있으면 `pactl unload-module module-pipe-sink`로 한 번 지우면 다음 재생 때 새로 만듭니다.
 FIFO가 아직 없으면(snapserver가 안 떠 있음) 만들지 않고 원래 출력(기본 싱크)으로 재생하며, 다음 재생 때 다시 시도합니다. 그래서 부팅 순서가 어긋나도 snapserver가 뜬 뒤 첫 재생부터 Snapcast로 나갑니다.
 싱크가 **기본 출력이 되면 안 됩니다**(로컬 snapclient 소리가 다시 Snapcast로 돌아감). 로그에 경고가 나오면 `pactl set-default-sink <TV 싱크>`로 TV 출력을 기본으로 돌려 두세요.
 
