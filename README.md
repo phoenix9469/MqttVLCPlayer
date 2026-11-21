@@ -319,7 +319,7 @@ echo 'SNAPCLIENT_TV_SINK=alsa_output.pci-0000_00_1b.0.hdmi-stereo' > ~/.config/s
 systemctl --user daemon-reload && systemctl --user enable --now snapclient-tv
 ```
 
-snapclient는 싱크를 지정해서 PipeWire로 냅니다(`--player pulse --soundcard <싱크>`). TV 출력 지연이 있으면 `SNAPCLIENT_TV_OPTS="--latency 50"`처럼 보정합니다. 다른 스피커의 클라이언트도 같은 서버 주소(1704 포트)로 붙습니다.
+snapclient는 싱크를 지정해서 PipeWire로 냅니다(`--player pulse --soundcard <싱크>`). TV 출력 지연이 있으면 `SNAPCLIENT_TV_OPTS="--latency 50"`처럼 보정합니다. 재동기화(`shortMedian`, `No chunks` 로그)나 끊김이 잦으면 env 파일에 `SNAPCLIENT_TV_PLAYER=pulse:buffer_time=200`으로 출력 버퍼를 늘립니다(기본 100ms). 다른 스피커의 클라이언트도 같은 서버 주소(1704 포트)로 붙습니다.
 
 ### 4. 켜기와 립싱크 맞추기
 
