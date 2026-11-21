@@ -127,6 +127,7 @@ sudo ln -sf ~/.deno/bin/deno /usr/local/bin/deno   # 자동 실행된 앱에서�
 | `SNAPCAST_SINK` | `snapcast` | 출력할 PipeWire/PulseAudio 싱크 이름 (mpv `--audio-device=pulse/<이름>`) |
 | `SNAPCAST_FIFO` | `/tmp/snapfifo` | 싱크가 없을 때 앱이 만드는 싱크(module-pipe-sink)가 쓸 FIFO. `snapserver.conf`의 `pipe://` 경로와 같아야 함 |
 | `SNAPCAST_FIFO_MAX_MS` | `60` | FIFO에 밀려 있어도 되는 소리 양(ms). snapserver는 밀린 소리를 따라잡지 않아서, 잠깐 멈칫한 만큼 계속 늦게 나옴(립싱크가 재생마다 달라짐). 넘으면 넘친 만큼 버려서 지연을 일정하게 유지. `0`이면 끔 |
+| `SNAPCAST_RPC_URL` | `http://127.0.0.1:1780/jsonrpc` | 웹 UI 스피커별 음량에 쓰는 snapserver JSON-RPC 주소 |
 | `SNAPCAST_AUDIO_DELAY_MS` | `-450` | 영상 립싱크 보정(ms) 처음 값. 음수 = 소리를 먼저. 대략 −(snapserver `buffer` + TV 출력 지연). 웹 UI·HA에서 바꾸면 `config.json` 값이 우선 |
 | `SOUND_PREROLL_IDLE` | `10` | 직전 알림이 끝나고 이 시간(초)이 지난 뒤에만 무음을 넣음 |
 | `SOUND_VOLUME` | `100` | 알림 소리 기본 볼륨 처음 값(0~200). 웹 UI에서 바꾸면 `config.json`에 저장되어 그 값이 우선 |
@@ -326,7 +327,7 @@ snapclient는 싱크를 지정해서 PipeWire로 냅니다(`--player pulse --sou
 - `/etc/mqttvlcplayer.env`에 `SNAPCAST=1`, 또는 웹 UI 설정의 "Snapcast"를 켜고 저장. HA에서는 스위치 `SWITCH_CVLC_SNAPCAST`. 재생 중인 영상에도 바로 적용되고, 알림은 다음 소리부터 적용됩니다.
 - 립싱크: 영상 재생 중 처음 화면의 "립싱크" 줄에서 **소리 빠르게 / 소리 늦게**(50ms씩)로 대사 장면을 보며 맞춥니다. 값은 저장되어 다음 재생부터 기본값이 됩니다. HA에서는 `NUMBER_CVLC_AUDIO_DELAY`(ms).
 - 기준: 소리가 화면보다 늦으면 더 음수로, 빠르면 0 쪽으로. 대략 −(snapserver `buffer` + TV 출력 지연).
-- 스피커별 음량·음소거는 Home Assistant의 공식 **Snapcast 통합**(설정 → 기기 및 서비스 → 통합 추가 → Snapcast, 호스트 = 서버 주소, 포트 1705)으로 합니다.
+- 스피커별 음량·음소거: 웹 UI 처음 화면 "음량"의 **스피커별 음량 (Snapcast)**에서 스피커마다 0~100과 음소거를 바꿉니다(snapserver JSON-RPC, `SNAPCAST_RPC_URL`). Home Assistant에서는 공식 **Snapcast 통합**(설정 → 기기 및 서비스 → 통합 추가 → Snapcast, 호스트 = 서버 주소, 포트 1705)으로 합니다.
 
 ### 확인
 

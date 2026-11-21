@@ -120,6 +120,12 @@
             </div>
         </div>
         <p class="hint">100이 원래 크기(최대 200). 영상 음량은 재생 중에도 바로 바뀌고, 알림 음량은 볼륨을 따로 지정하지 않은 알림에 적용됩니다.</p>
+        <!-- Snapcast 스피커별 음량: snapserver에 스피커가 있을 때만 -->
+        <div id="snap-box" hidden>
+            <h3 class="subhead">스피커별 음량 (Snapcast)</h3>
+            <div id="snap-clients"></div>
+            <p class="hint">스피커마다 따로 0~100. 위의 영상·알림 음량에 더해 스피커별로 한 번 더 조절됩니다. 음소거는 바로 반영됩니다.</p>
+        </div>
     </section>
 
     <!-- 알림 소리 -->
@@ -701,6 +707,64 @@
                 .finally(() => { button.disabled = false; button.textContent = "yt-dlp 업데이트"; });
             });
         }
+
+        // Snapcast 스피커별 음량: 10초마다 갱신 (끄는 중이면 덮어쓰지 않음)
+        let snapDragging = false;
+        let snapKey = '';
+        function snapVolume(id, body) {
+            return fetch('/snapcast/volume', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.assign({ id: id }, body))
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') alert(data.message || '스피커 음량을 바꾸지 못했습니다.');
+                refreshSnap();
+            });
+        }
+        function refreshSnap() {
+            if (snapDragging) return;
+            fetch('/snapcast/clients').then(r => r.json()).then(data => {
+                const clients = data.clients || [];
+                document.getElementById('snap-box').hidden = clients.length === 0;
+                const list = document.getElementById('snap-clients');
+                const key = clients.map(c => c.id).join('|');
+                if (key !== snapKey) {
+                    // 스피커 목록이 바뀌었을 때만 다시 그림
+                    snapKey = key;
+                    list.innerHTML = '';
+                    clients.forEach(c => {
+                        const row = document.createElement('div');
+                        row.className = 'form-group snap-client';
+                        row.dataset.id = c.id;
+                        row.innerHTML = `<label><span class="dot"></span> <span class="snap-name"></span> <span class="hint snap-info"></span></label>
+                            <div class="slider">
+                                <input type="range" min="0" max="100" step="1" aria-label="스피커 음량">
+                                <span class="snap-value"></span>
+                                <button class="btn secondary snap-mute" type="button"></button>
+                            </div>`;
+                        const slider = row.querySelector('input');
+                        slider.addEventListener('input', () => { snapDragging = true; row.querySelector('.snap-value').textContent = slider.value; });
+                        slider.addEventListener('change', () => { snapDragging = false; snapVolume(c.id, { percent: Number(slider.value) }); });
+                        row.querySelector('.snap-mute').addEventListener('click', () => snapVolume(c.id, { muted: row.dataset.muted !== '1' }));
+                        list.appendChild(row);
+                    });
+                }
+                clients.forEach(c => {
+                    const row = list.querySelector(`[data-id="${CSS.escape(c.id)}"]`);
+                    if (!row) return;
+                    row.dataset.muted = c.muted ? '1' : '0';
+                    row.classList.toggle('offline', !c.connected);
+                    row.querySelector('.dot').classList.toggle('on', c.connected && !c.muted);
+                    row.querySelector('.snap-name').textContent = c.name;
+                    row.querySelector('.snap-info').textContent = [c.host, c.connected ? '' : '연결 안 됨', `지연 보정 ${c.latency}ms`].filter(Boolean).join(' · ');
+                    row.querySelector('input').value = c.percent;
+                    row.querySelector('.snap-value').textContent = c.muted ? '음소거' : c.percent;
+                    row.querySelector('.snap-mute').textContent = c.muted ? '소리 켜기' : '음소거';
+                });
+            }).catch(() => { document.getElementById('snap-box').hidden = true; });
+        }
+        refreshSnap();
+        setInterval(() => { if (!document.hidden) refreshSnap(); }, 10000);
 
         // 음량: 끌면 숫자만 바꾸고, 놓으면 서버에 저장
         document.querySelectorAll('input.volume').forEach(function(slider) {

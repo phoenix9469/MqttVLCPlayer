@@ -490,3 +490,35 @@ main.single {
 .sub-style input[type=range] { width: 140px; }
 #now-subs-box, #now-sync-box { flex-wrap: wrap; gap: 8px; align-items: center; }
 #now-subs-box select { width: auto; flex: 1 1 160px; }
+
+/* Snapcast 스피커별 음량 */
+.subhead {
+    margin: 18px 0 8px;
+    font-size: 1rem;
+}
+
+.snap-client .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.snap-client .dot.on {
+    background: var(--ok);
+}
+
+.snap-client.offline {
+    opacity: 0.55;
+}
+
+.slider .snap-value {
+    width: 4em;
+}
+
+.slider .snap-mute {
+    flex: none;
+    width: auto;
+    padding: 6px 10px;
+}

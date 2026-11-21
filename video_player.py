@@ -1102,6 +1102,26 @@ def update_volume():
                     "sound": config["sound_volume"], "video_applied_now": applied})
 
 
+@app.route("/snapcast/clients")
+def snapcast_clients_route():
+    """Snapcast 스피커별 음량 목록"""
+    try:
+        return jsonify({"status": "success", "clients": snapcast.clients()})
+    except snapcast.RpcError as e:
+        return jsonify({"status": "error", "message": str(e), "clients": []}), 502
+
+
+@app.route("/snapcast/volume", methods=["POST"])
+def snapcast_volume_route():
+    """스피커 음량. body: {"id": "tv", "percent": 80} 또는 {"id": "tv", "muted": true}"""
+    data = request.get_json(silent=True) or {}
+    try:
+        snapcast.set_client_volume(str(data.get("id", "")), data.get("percent"), data.get("muted"))
+    except (snapcast.RpcError, TypeError, ValueError) as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    return jsonify({"status": "success"})
+
+
 @app.route("/audio/output", methods=["POST"])
 def audio_output_route():
     """Snapcast 출력과 립싱크 보정. body: {"snapcast": true/false, "audio_delay_ms": -450} 또는 {"delta": 50}"""

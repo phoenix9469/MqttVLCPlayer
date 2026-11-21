@@ -8,6 +8,7 @@ snapserver가 여러 스피커(snapclient)에 동시에 재생하게 한다.
 """
 import array
 import fcntl
+import json
 import logging
 import os
 import shutil
@@ -16,6 +17,7 @@ import subprocess
 import termios
 import threading
 import time
+import urllib.request
 
 log = logging.getLogger("mqttvlcplayer")
 
@@ -25,6 +27,8 @@ SNAPCAST_AUDIO_DELAY_MS = int(os.environ.get("SNAPCAST_AUDIO_DELAY_MS", "-450"))
 # 출력할 싱크 이름과, 싱크가 없을 때 앱이 만들 때 쓸 FIFO (snapserver.conf의 pipe:// 경로와 같아야 함)
 SNAPCAST_SINK = os.environ.get("SNAPCAST_SINK", "snapcast").strip() or "snapcast"
 SNAPCAST_FIFO = os.environ.get("SNAPCAST_FIFO", "/tmp/snapfifo").strip() or "/tmp/snapfifo"
+# snapserver JSON-RPC (스피커별 음량)
+SNAPCAST_RPC_URL = os.environ.get("SNAPCAST_RPC_URL", "http://127.0.0.1:1780/jsonrpc").strip()
 # FIFO에 밀려 있어도 되는 소리 양(ms). 넘으면 넘친 만큼 버림 (아래 BacklogGuard)
 SNAPCAST_FIFO_MAX_MS = int(os.environ.get("SNAPCAST_FIFO_MAX_MS", "60"))
 # snapserver.conf의 sampleformat과 같아야 함 (48000:16:2)
@@ -187,3 +191,56 @@ def mpv_args(enabled, delay_ms, video=True):
     if video and delay_ms:
         args.append(f"--audio-delay={delay_ms / 1000:.3f}")
     return args
+
+
+class RpcError(Exception):
+    pass
+
+
+def rpc(method, params=None):
+    """snapserver JSON-RPC 호출, result 반환"""
+    body = json.dumps({"id": 1, "jsonrpc": "2.0", "method": method, "params": params or {}}).encode()
+    request = urllib.request.Request(SNAPCAST_RPC_URL, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            reply = json.load(response)
+    except (OSError, ValueError) as e:
+        raise RpcError(f"snapserver에 연결할 수 없습니다 ({SNAPCAST_RPC_URL}): {e}") from e
+    if "error" in reply:
+        raise RpcError(reply["error"].get("message", str(reply["error"])))
+    return reply.get("result")
+
+
+def clients():
+    """snapserver에 등록된 스피커(클라이언트) 목록. 연결된 것 먼저"""
+    server = rpc("Server.GetStatus")["server"]
+    result = []
+    for group in server.get("groups", []):
+        for client in group.get("clients", []):
+            config = client.get("config", {})
+            volume = config.get("volume", {})
+            result.append({
+                "id": client["id"],
+                # 이름을 따로 안 정했으면 hostID (tv, candle 등)
+                "name": config.get("name") or client["id"],
+                "host": client.get("host", {}).get("name", ""),
+                "connected": bool(client.get("connected")),
+                "percent": volume.get("percent", 100),
+                "muted": bool(volume.get("muted")),
+                "latency": config.get("latency", 0),
+                "version": client.get("snapclient", {}).get("version", ""),
+            })
+    result.sort(key=lambda c: (not c["connected"], c["name"]))
+    return result
+
+
+def set_client_volume(client_id, percent=None, muted=None):
+    """스피커 음량(0~100)과 음소거. 지정한 것만 바꿈"""
+    current = next((c for c in clients() if c["id"] == client_id), None)
+    if current is None:
+        raise RpcError(f"스피커를 찾을 수 없습니다: {client_id}")
+    if percent is not None:
+        percent = max(0, min(100, int(percent)))
+    volume = {"percent": current["percent"] if percent is None else percent,
+              "muted": current["muted"] if muted is None else bool(muted)}
+    return rpc("Client.SetVolume", {"id": client_id, "volume": volume})
